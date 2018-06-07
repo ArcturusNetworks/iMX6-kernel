@@ -1254,7 +1254,6 @@ static int ov5645_init_mode(enum ov5645_frame_rate frame_rate,
 		pr_err("mode = %d ,Wrong ov5645 mode detected!\n",mode);
 		return -1;
 	}
-	printk(KERN_INFO "resolution mode is : %d \n",mode);
 	mipi_csi2_info = mipi_csi2_get_info();
 
 	/* initial mipi dphy */
