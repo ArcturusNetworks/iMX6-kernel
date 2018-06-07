@@ -1,0 +1,114 @@
+/*
+ * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
+
+#include "imx6sx-sdb.dtsi"
+
+/ {
+	model = "Arcturus i.MX6 uCsmarc Rev0.1 Board";
+
+	regulators {
+		/* Transceiver EN/STBY is active low on RevB board */
+		reg_can_stby: regulator@10 {
+			gpio = <&gpio4 27 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&cpu0 {
+	operating-points = <
+		/* kHz    uV */
+		996000  1250000
+		792000  1175000
+		396000  1175000
+		198000	1175000
+		>;
+	fsl,soc-operating-points = <
+		/* ARM kHz      SOC uV */
+		996000	1250000
+		792000	1175000
+		396000	1175000
+		198000	1175000
+	>;
+	arm-supply = <&sw1a_reg>;
+	soc-supply = <&sw1a_reg>;
+	fsl,arm-soc-shared = <1>;
+};
+
+&qspi2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_qspi2>;
+	status = "okay";
+
+	ddrsmp=<0>;
+
+	flash0: n25q256a@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "micron,n25q256a";
+		spi-max-frequency = <29000000>;
+		reg = <0>;
+
+
+		partition@100000 {
+			/* 7MB - PART 0 */
+			reg = <0x00100000 0x00700000>;
+			label = "0";
+		};
+
+		partition@800000 {
+			/* 24MB - PART 1 */
+			reg = <0x00800000 0x01780000>;
+			label = "1";
+		};
+
+		partition@1f80000 {
+			/* 0.5MB - part 2 */
+			reg = <0x01f80000 0x00080000>;
+			label = "2";
+		};
+
+		partition@0 {
+			/* 0.5MB - part 3 (bootloader) */
+			reg = <0x00000000 0x00080000>;
+			label = "B";
+		};
+
+		partition@80000 {
+			/* 256KB - part 4 (bootloader env var) */
+			reg = <0x00080000 0x00040000>;
+			label = "E";
+		};
+
+		partition@C0000 {
+			/* 256KB - part5 (kernel env var) */
+			reg = <0x000C0000 0x00040000>;
+			label = "UENV";
+		};
+	};
+
+	flash1: n25q256a@1 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "micron,n25q256a";
+		spi-max-frequency = <29000000>;
+		reg = <1>;
+
+		partition@3 {
+			label = "3";
+			reg = <0x0 0x2000000>;
+		};
+	};
+};
+
+&usbphy1 {
+	tx-d-cal = <0x5>;
+};
+
+&usbphy2 {
+	tx-d-cal = <0x5>;
+};

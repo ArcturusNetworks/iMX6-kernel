@@ -1,0 +1,9 @@
+#
+#
+#
+config ARCAUDIO
+	bool "ARCturus AUDIO device interface"
+	help
+	  ARCAUDIO (ARCturus AUDIO device interface) is an 
+	  aplication programming interface mainly used to
+	  connect audio devices (codecs, slics) to the rest of the system.
