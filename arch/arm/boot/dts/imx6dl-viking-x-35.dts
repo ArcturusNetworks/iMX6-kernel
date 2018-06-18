@@ -22,6 +22,20 @@
 		reg = <0x10000000 0x40000000>;
 	};
 
+	leds {
+		compatible = "gpio-leds";
+		pic {
+			label = "PIC Reset";
+			gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>; 
+			default-state = "off";
+		};
+		green {
+			label = "Green LED";
+			gpios = <&gpio1 8 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
+	};
+
 	regulators {
 		compatible = "simple-bus";
 		#address-cells = <1>;
@@ -60,10 +74,13 @@
 			     "fsl,imx-audio-sgtl5000";
 		model = "audio-sgtl5000";
 		ssi-controller = <&ssi1>;
+		audio-codec = <&codec>;
 		audio-routing =
+			"LINE_IN", "Line In Jack",
 			"MIC_IN", "Mic Jack",
 			"Mic Jack", "Mic Bias",
-			"Headphone Jack", "HP_OUT";
+			"Headphone Jack", "HP_OUT",
+			"Ext Spk", "LINE_OUT";
 		mux-int-port = <1>;
 		mux-ext-port = <3>;
 	};
@@ -108,36 +125,28 @@
 
 &i2c2 {
 	clock-frequency = <100000>;
+	status = "disable";
+};
+
+&i2c3 {
+	clock-frequency = <100000>;
 	status = "okay";
 	
-	ov5648_mipi: ov5648_mipi@3c {
-		compatible = "ovti,ov564x_mipi";
+	ov5645_mipi: ov5645_mipi@3c {
+		compatible = "ovti,ov5645_mipi";
 		reg = <0x3c>;
 		clocks = <&clks 200>;
 		clock-names = "csi_mclk";
 		DOVDD-supply = <&reg_1p8v>;
 		AVDD-supply = <&reg_2p5v>;
 		DVDD-supply = <&reg_1p8v>;
-		pwn-gpios = <&gpio5 31 1>;
-		rst-gpios = <&gpio6 1 0>;
+		pwn-gpios = <&gpio5 31 GPIO_ACTIVE_LOW>;
+		rst-gpios = <&gpio6 1 GPIO_ACTIVE_LOW>;
 		ipu_id = <0>;
 		csi_id = <0>;
 		mclk = <24000000>;
 		mclk_source = <0>;
 	};
-
-	pca9554: pca9554@25 {
-		compatible = "nxp,pca9554";
-		gpio-controller;
-		#gpio-cells = <2>;
-		#interrupt-cells = <2>;
-		reg = <0x25>;
-	};
-};
-
-&i2c3 {
-	clock-frequency = <100000>;
-	status = "okay";
 };
 
 
@@ -164,14 +173,23 @@
 &uart3 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_uart3>;
-	fsl,uart-has-rtscts;
 	status = "okay";
+	fsl,uart-has-rtscts;
+	/*fsl,dte-mode;*/
 };
 
 &usdhc1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_usdhc1>;
 	cd-gpios = <&gpio3 9 GPIO_ACTIVE_LOW>;
+	status = "okay";
+};
+
+&usdhc3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usdhc3>;
+	bus-width = <4>;
+	cd-gpios = <&gpio1 2 GPIO_ACTIVE_LOW>;
 	status = "okay";
 };
 
@@ -187,17 +205,17 @@
 	x-35 {
 		pinctrl_hog_1: hoggrp-1 {
 			fsl,pins = <
-				/* BALL T1 JE1_33 1.8v PIC Reset */
-				MX6QDL_PAD_GPIO_2__GPIO1_IO02	0x80000000
+				/* BALL T4 JE1_33 1.8v PIC Reset */
+				MX6QDL_PAD_GPIO_1__GPIO1_IO01	0x000000b0
 				/* BALL T3 JX2_67 3.3v Orange LED */
-				MX6QDL_PAD_GPIO_6__GPIO1_IO06	0x80000000
+				MX6QDL_PAD_GPIO_6__GPIO1_IO06	0x000000b0
 				/* BALL R5 JX2_65 3.3v Green LED */
 				MX6QDL_PAD_GPIO_8__GPIO1_IO08	0x80000000
 				/* Camera */
 				/* BALL L1 JE1_44 1.8v Power Down */
 				MX6QDL_PAD_CSI0_DAT13__GPIO5_IO31 0x0000b0b0
 				/* BALL M5 JE1_48 1.8v Reset */
-				MX6QDL_PAD_CSI0_DAT15__GPIO6_IO01 0x0000b0b0
+				MX6QDL_PAD_CSI0_DAT15__GPIO6_IO01 0x000000b0
 				/* BALL F21 JE1_45 1.8v SCL */
 				MX6QDL_PAD_EIM_D17__I2C3_SCL 	0x4001b8b1
 				/* BALL D24 JE1_47 1.8v SDA
@@ -385,14 +403,14 @@
 
 		pinctrl_uart3: uart3grp {
 			fsl,pins = <
-				/* BALL D25 JE1_65 1.8v */
-				MX6QDL_PAD_EIM_D23__UART3_CTS_B	0x0001b0b1
 				/* BALL	F22 JE1_46 1.8v */
-				MX6QDL_PAD_EIM_D24__UART3_TX_DATA 0x0001b0b1
+				MX6QDL_PAD_EIM_D24__UART3_TX_DATA 0x0001b0b0
 				/* BALL G22 JE1_61 1.8v */
-				MX6QDL_PAD_EIM_D25__UART3_RX_DATA 0x0001b0b1
+				MX6QDL_PAD_EIM_D25__UART3_RX_DATA 0x0001b0b0
+				/* BALL D25 JE1_65 1.8v */
+				MX6QDL_PAD_EIM_D23__UART3_CTS_B	0x0001b0b0
 				/* BALL H21 JE1_63 1.8v */
-				MX6QDL_PAD_EIM_D31__UART3_RTS_B 0x0001b0b1
+				MX6QDL_PAD_EIM_D31__UART3_RTS_B 0x0001b0b0
 			>;
 		};
 
@@ -412,6 +430,21 @@
 				MX6QDL_PAD_SD1_DAT2__SD1_DATA2	0x00017071
 				/* BALL F18 JE1_68 1.8v Data 3 */
 				MX6QDL_PAD_SD1_DAT3__SD1_DATA3	0x00017071
+			>;
+		};
+		pinctrl_usdhc3: usdhc3grp {
+			fsl,pins = <
+				/*MX6QDL_PAD_GPIO_2__GPIO1_IO02	0x80000000*/
+				MX6QDL_PAD_SD3_CMD__SD3_CMD	0x17059
+				MX6QDL_PAD_SD3_CLK__SD3_CLK	0x10059
+				MX6QDL_PAD_SD3_DAT0__SD3_DATA0	0x17059
+				MX6QDL_PAD_SD3_DAT1__SD3_DATA1	0x17059
+				MX6QDL_PAD_SD3_DAT2__SD3_DATA2	0x17059
+				MX6QDL_PAD_SD3_DAT3__SD3_DATA3	0x17059
+				MX6QDL_PAD_SD3_DAT4__SD3_DATA4	0x17059
+				MX6QDL_PAD_SD3_DAT5__SD3_DATA5	0x17059
+				MX6QDL_PAD_SD3_DAT6__SD3_DATA6	0x17059
+				MX6QDL_PAD_SD3_DAT7__SD3_DATA7	0x17059
 			>;
 		};
 	};
