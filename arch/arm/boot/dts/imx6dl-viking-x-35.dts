@@ -25,15 +25,21 @@
 	leds {
 		compatible = "gpio-leds";
 		pic {
-			label = "PIC Reset";
+			label = "pic_reset";
 			gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>; 
-			default-state = "off";
-		};
-		green {
-			label = "Green LED";
-			gpios = <&gpio1 8 GPIO_ACTIVE_HIGH>;
 			default-state = "on";
 		};
+		green {
+			label = "green";
+			gpios = <&gpio1 8 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
+		orange {
+			label = "orange";
+			gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
+
 	};
 
 	regulators {
@@ -210,7 +216,7 @@
 				/* BALL T3 JX2_67 3.3v Orange LED */
 				MX6QDL_PAD_GPIO_6__GPIO1_IO06	0x000000b0
 				/* BALL R5 JX2_65 3.3v Green LED */
-				MX6QDL_PAD_GPIO_8__GPIO1_IO08	0x80000000
+				MX6QDL_PAD_GPIO_8__GPIO1_IO08	0x000000b0
 				/* Camera */
 				/* BALL L1 JE1_44 1.8v Power Down */
 				MX6QDL_PAD_CSI0_DAT13__GPIO5_IO31 0x0000b0b0
