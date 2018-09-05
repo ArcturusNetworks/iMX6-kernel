@@ -292,6 +292,7 @@ dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6dl-pico_dwarf.dtb \
 	imx6dl-pico_viking-E37.dtb \
 	imx6dl-pico_viking-X35.dtb \
+	imx6dl-viking-x-35.dtb \
 	imx6dl-pico_hobbit.dtb \
 	imx6dl-pico_nymph.dtb \
 	imx6dl-tek3.dtb \
