@@ -22,7 +22,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmsdpcm.h 414378 2013-07-24 15:58:50Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: bcmsdpcm.h 514727 2014-11-12 03:02:48Z $
  */
 
 #ifndef	_bcmsdpcm_h_
@@ -268,14 +271,11 @@ typedef struct {
 	uint32  assert_exp_addr;
 	uint32  assert_file_addr;
 	uint32  assert_line;
-	uint32	console_addr;		/* Address of hndrte_cons_t */
+	uint32	console_addr;		/* Address of hnd_cons_t */
 	uint32  msgtrace_addr;
 	uint32  fwid;
 } sdpcm_shared_t;
 
 extern sdpcm_shared_t sdpcm_shared;
-
-/* Function can be used to notify host of FW halt */
-extern void sdpcmd_fwhalt(void);
 
 #endif	/* _bcmsdpcm_h_ */

@@ -130,7 +130,9 @@ enum gpmi_type {
 	IS_MX6QP,
 	IS_MX6SX,
 	IS_MX7D,
-	IS_MX6UL
+	IS_MX6UL,
+	IS_MX6ULL,
+	IS_MX8QXP,
 };
 
 struct gpmi_devdata {
@@ -167,7 +169,6 @@ struct gpmi_nand_data {
 
 	/* MTD / NAND */
 	struct nand_chip	nand;
-	struct mtd_info		mtd;
 
 	/* General-use Variables */
 	int			current_chip;
@@ -197,6 +198,8 @@ struct gpmi_nand_data {
 	dma_addr_t		auxiliary_phys;
 
 	void			*raw_buffer;
+	/* legacy bch geometry flag */
+	bool			legacy_bch_geometry;
 
 	/* DMA channels */
 #define DMA_CHANS		8
@@ -318,8 +321,11 @@ void gpmi_copy_bits(u8 *dst, size_t dst_bit_off,
 #define GPMI_IS_MX6SX(x)	((x)->devdata->type == IS_MX6SX)
 #define GPMI_IS_MX7D(x)		((x)->devdata->type == IS_MX7D)
 #define GPMI_IS_MX6UL(x)	((x)->devdata->type == IS_MX6UL)
+#define GPMI_IS_MX6ULL(x)	((x)->devdata->type == IS_MX6ULL)
+#define GPMI_IS_MX8QXP(x)	((x)->devdata->type == IS_MX8QXP)
 
 #define GPMI_IS_MX6(x)		(GPMI_IS_MX6Q(x) || GPMI_IS_MX6QP(x)\
-	   || GPMI_IS_MX6SX(x) || GPMI_IS_MX6UL(x))
+	   || GPMI_IS_MX6SX(x) || GPMI_IS_MX6UL(x) || GPMI_IS_MX6ULL(x))
 #define GPMI_IS_MX7(x)		(GPMI_IS_MX7D(x))
+#define GPMI_IS_MX8(x)		(GPMI_IS_MX8QXP(x))
 #endif

@@ -8,10 +8,6 @@ menu "Graphics support"
 config HAVE_FB_ATMEL
 	bool
 
-config SH_MIPI_DSI
-	tristate
-	depends on (SUPERH || ARCH_SHMOBILE) && HAVE_CLK
-
 config SH_LCD_MIPI_DSI
 	bool
 
@@ -20,11 +16,9 @@ source "drivers/char/agp/Kconfig"
 source "drivers/gpu/vga/Kconfig"
 
 source "drivers/gpu/host1x/Kconfig"
-source "drivers/gpu/ipu-v3/Kconfig"
+source "drivers/gpu/imx/Kconfig"
 
-menu "Direct Rendering Manager"
 source "drivers/gpu/drm/Kconfig"
-endmenu
 
 menu "Frame buffer Devices"
 source "drivers/video/fbdev/Kconfig"

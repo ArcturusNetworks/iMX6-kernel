@@ -399,10 +399,10 @@
 
 			VCOM_reg: VCOM {
 				regulator-name = "VCOM";
-				/* 2's-compliment, -4325000 */
-				regulator-min-microvolt = <0xffbe0178>;
-				/* 2's-compliment, -500000 */
-				regulator-max-microvolt = <0xfff85ee0>;
+				/* Real max value: -500000 */
+				regulator-max-microvolt = <4325000>;
+				/* Real min value: -4325000 */
+				regulator-min-microvolt = <500000>;
 			};
 
 			VNEG_reg: VNEG {
@@ -840,7 +840,7 @@
 	imx7d-12x12-lpddr3-arm2 {
 		pinctrl_pwm1: pwm1grp {
 			fsl,pins = <
-				MX7D_PAD_GPIO1_IO01__PWM1_OUT	0x110b0
+				MX7D_PAD_GPIO1_IO01__PWM1_OUT	0x30
 			>;
 		};
 	};
@@ -951,6 +951,8 @@
 
 &usbotg1 {
 	vbus-supply = <&reg_usb_otg1_vbus>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usbotg1_vbus>;
 	srp-disable;
 	hnp-disable;
 	adp-disable;
@@ -959,6 +961,8 @@
 
 &usbotg2 {
 	vbus-supply = <&reg_usb_otg2_vbus>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usbotg2_vbus>;
 	srp-disable;
 	hnp-disable;
 	adp-disable;
@@ -1009,5 +1013,5 @@
 &wdog1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_wdog>;
-	fsl,wdog_b;
+	fsl,ext-reset-output;
 };

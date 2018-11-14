@@ -19,6 +19,7 @@
 #include <linux/of_device.h>
 #include <linux/of_fdt.h>
 #include <linux/of_irq.h>
+#include <linux/psci.h>
 #include <linux/slab.h>
 #include <linux/suspend.h>
 #include <linux/genalloc.h>
@@ -36,6 +37,8 @@
 #include <asm/proc-fns.h>
 #include <asm/suspend.h>
 #include <asm/tlb.h>
+
+#include <uapi/linux/psci.h>
 
 #include "common.h"
 #include "hardware.h"
@@ -78,12 +81,17 @@
 
 #define CCM_LPCG_START		0x4040
 #define CCM_LPCG_STEP		0x10
+#define CCM_EIM_LPCG		0x4160
+#define CCM_PXP_LPCG		0x44c0
 #define CCM_PCIE_LPCG		0x4600
 
 #define BM_CCM_ROOT_POST_PODF	0x3f
 #define BM_CCM_ROOT_PRE_PODF	0x70000
 #define BM_CCM_ROOT_MUX		0x7000000
 #define BM_CCM_ROOT_ENABLE	0x10000000
+
+#define BM_SYS_COUNTER_CNTCR_FCR1 0x200
+#define BM_SYS_COUNTER_CNTCR_FCR0 0x100
 
 #define PFD_A_OFFSET		0xc0
 #define PFD_B_OFFSET		0xd0
@@ -212,7 +220,7 @@ static const u32 imx7d_ddrc_lpddr3_setting[][2] __initconst = {
 	{ 0x1a4, READ_DATA_FROM_HARDWARE },
 	{ 0x1a8, READ_DATA_FROM_HARDWARE },
 	{ 0x64, READ_DATA_FROM_HARDWARE },
-	{ 0xd0, 0xc0350001 },
+	{ 0xd0, READ_DATA_FROM_HARDWARE },
 	{ 0xdc, READ_DATA_FROM_HARDWARE },
 	{ 0xe0, READ_DATA_FROM_HARDWARE },
 	{ 0xe4, READ_DATA_FROM_HARDWARE },
@@ -224,6 +232,7 @@ static const u32 imx7d_ddrc_lpddr3_setting[][2] __initconst = {
 	{ 0x110, READ_DATA_FROM_HARDWARE },
 	{ 0x114, READ_DATA_FROM_HARDWARE },
 	{ 0x118, READ_DATA_FROM_HARDWARE },
+	{ 0x120, READ_DATA_FROM_HARDWARE },
 	{ 0x11c, READ_DATA_FROM_HARDWARE },
 	{ 0x180, READ_DATA_FROM_HARDWARE },
 	{ 0x184, READ_DATA_FROM_HARDWARE },
@@ -231,9 +240,10 @@ static const u32 imx7d_ddrc_lpddr3_setting[][2] __initconst = {
 	{ 0x194, READ_DATA_FROM_HARDWARE },
 	{ 0x200, READ_DATA_FROM_HARDWARE },
 	{ 0x204, READ_DATA_FROM_HARDWARE },
+	{ 0x210, READ_DATA_FROM_HARDWARE },
 	{ 0x214, READ_DATA_FROM_HARDWARE },
 	{ 0x218, READ_DATA_FROM_HARDWARE },
-	{ 0x240, 0x06000601 },
+	{ 0x240, READ_DATA_FROM_HARDWARE },
 	{ 0x244, READ_DATA_FROM_HARDWARE },
 };
 
@@ -242,6 +252,7 @@ static const u32 imx7d_ddrc_phy_lpddr3_setting[][2] __initconst = {
 	{ 0x4, READ_DATA_FROM_HARDWARE },
 	{ 0x8, READ_DATA_FROM_HARDWARE },
 	{ 0x10, READ_DATA_FROM_HARDWARE },
+	{ 0xb0, READ_DATA_FROM_HARDWARE },
 	{ 0x1c, READ_DATA_FROM_HARDWARE },
 	{ 0x9c, READ_DATA_FROM_HARDWARE },
 	{ 0x7c, READ_DATA_FROM_HARDWARE },
@@ -253,11 +264,10 @@ static const u32 imx7d_ddrc_phy_lpddr3_setting[][2] __initconst = {
 	{ 0x30, READ_DATA_FROM_HARDWARE },
 	{ 0x50, 0x01000008 },
 	{ 0x50, 0x00000008 },
-	{ 0xc0, 0x0e407304 },
-	{ 0xc0, 0x0e447304 },
-	{ 0xc0, 0x0e447306 },
+	{ 0xc0, 0x0e487304 },
 	{ 0xc0, 0x0e4c7304 },
-	{ 0xc0, 0x0e487306 },
+	{ 0xc0, 0x0e4c7306 },
+	{ 0xc0, 0x0e487304 },
 };
 
 static const u32 imx7d_ddrc_ddr3_setting[][2] __initconst = {
@@ -266,8 +276,8 @@ static const u32 imx7d_ddrc_ddr3_setting[][2] __initconst = {
 	{ 0x1a4, READ_DATA_FROM_HARDWARE },
 	{ 0x1a8, READ_DATA_FROM_HARDWARE },
 	{ 0x64, READ_DATA_FROM_HARDWARE },
-	{ 0x490, 0x00000001 },
-	{ 0xd0, 0xc0020001 },
+	{ 0x490, READ_DATA_FROM_HARDWARE },
+	{ 0xd0, READ_DATA_FROM_HARDWARE },
 	{ 0xd4, READ_DATA_FROM_HARDWARE },
 	{ 0xdc, READ_DATA_FROM_HARDWARE },
 	{ 0xe0, READ_DATA_FROM_HARDWARE },
@@ -279,15 +289,16 @@ static const u32 imx7d_ddrc_ddr3_setting[][2] __initconst = {
 	{ 0x10c, READ_DATA_FROM_HARDWARE },
 	{ 0x110, READ_DATA_FROM_HARDWARE },
 	{ 0x114, READ_DATA_FROM_HARDWARE },
-	{ 0x120, 0x03030803 },
+	{ 0x120, READ_DATA_FROM_HARDWARE },
 	{ 0x180, READ_DATA_FROM_HARDWARE },
 	{ 0x190, READ_DATA_FROM_HARDWARE },
 	{ 0x194, READ_DATA_FROM_HARDWARE },
 	{ 0x200, READ_DATA_FROM_HARDWARE },
 	{ 0x204, READ_DATA_FROM_HARDWARE },
+	{ 0x210, READ_DATA_FROM_HARDWARE },
 	{ 0x214, READ_DATA_FROM_HARDWARE },
 	{ 0x218, READ_DATA_FROM_HARDWARE },
-	{ 0x240, 0x06000601 },
+	{ 0x240, READ_DATA_FROM_HARDWARE },
 	{ 0x244, READ_DATA_FROM_HARDWARE },
 };
 
@@ -295,6 +306,7 @@ static const u32 imx7d_ddrc_phy_ddr3_setting[][2] __initconst = {
 	{ 0x0, READ_DATA_FROM_HARDWARE },
 	{ 0x4, READ_DATA_FROM_HARDWARE },
 	{ 0x10, READ_DATA_FROM_HARDWARE },
+	{ 0xb0, READ_DATA_FROM_HARDWARE },
 	{ 0x9c, READ_DATA_FROM_HARDWARE },
 	{ 0x7c, READ_DATA_FROM_HARDWARE },
 	{ 0x80, READ_DATA_FROM_HARDWARE },
@@ -308,8 +320,7 @@ static const u32 imx7d_ddrc_phy_ddr3_setting[][2] __initconst = {
 	{ 0xc0, 0x0e407304 },
 	{ 0xc0, 0x0e447304 },
 	{ 0xc0, 0x0e447306 },
-	{ 0xc0, 0x0e447304 },
-	{ 0xc0, 0x0e407306 },
+	{ 0xc0, 0x0e407304 },
 };
 
 static const struct imx7_pm_socdata imx7d_pm_data_lpddr3 __initconst = {
@@ -658,8 +669,29 @@ static void imx7_console_io_restore(void)
 	writel_relaxed(uart1_io[3], iomuxc_base + UART_TX_PAD);
 }
 
+#define MX7D_SUSPEND_POWERDWN_PARAM	\
+	((0 << PSCI_0_2_POWER_STATE_ID_SHIFT) | \
+	 (1 << PSCI_0_2_POWER_STATE_AFFL_SHIFT) | \
+	 (PSCI_POWER_STATE_TYPE_POWER_DOWN << PSCI_0_2_POWER_STATE_TYPE_SHIFT))
+
+#define MX7D_SUSPEND_STANDBY_PARAM	\
+	((0 << PSCI_0_2_POWER_STATE_ID_SHIFT) | \
+	 (1 << PSCI_0_2_POWER_STATE_AFFL_SHIFT) | \
+	 (PSCI_POWER_STATE_TYPE_STANDBY << PSCI_0_2_POWER_STATE_TYPE_SHIFT))
+
 static int imx7_suspend_finish(unsigned long val)
 {
+	u32 state;
+
+	if (val == 0)
+		state = MX7D_SUSPEND_POWERDWN_PARAM;
+	else
+		state = MX7D_SUSPEND_STANDBY_PARAM;
+
+	if (psci_ops.cpu_suspend) {
+		return psci_ops.cpu_suspend(state, __pa(cpu_resume));
+	}
+
 	if (!imx7_suspend_in_ocram_fn) {
 		cpu_do_idle();
 	} else {
@@ -687,6 +719,7 @@ static int imx7_pm_is_resume_from_lpsr(void)
 static int imx7_pm_enter(suspend_state_t state)
 {
 	unsigned int console_saved_reg[10] = {0};
+	u32 val;
 
 	if (!iram_tlb_base_addr) {
 		pr_warn("No IRAM/OCRAM memory allocated for suspend/resume \
@@ -695,13 +728,32 @@ static int imx7_pm_enter(suspend_state_t state)
 		return -EINVAL;
 	}
 
+	/*
+	 * arm_arch_timer driver requires system counter to be
+	 * a clock source with CLOCK_SOURCE_SUSPEND_NONSTOP flag
+	 * set, which means hardware system counter needs to keep
+	 * running during suspend, as the base clock for system
+	 * counter is 24MHz which will be disabled in STOP mode,
+	 * so we need to switch system counter's clock to alternate
+	 * (lower) clock, it is based on 32K, from block guide, there
+	 * is no special flow needs to be followed, system counter
+	 * hardware will handle the clock transition.
+	 */
+	val = readl_relaxed(system_counter_ctrl_base);
+	val &= ~BM_SYS_COUNTER_CNTCR_FCR0;
+	val |= BM_SYS_COUNTER_CNTCR_FCR1;
+	writel_relaxed(val, system_counter_ctrl_base);
+
 	switch (state) {
 	case PM_SUSPEND_STANDBY:
 		imx_anatop_pre_suspend();
 		imx_gpcv2_pre_suspend(false);
 
 		/* Zzz ... */
-		imx7_suspend_in_ocram_fn(suspend_ocram_base);
+		if (psci_ops.cpu_suspend)
+			cpu_suspend(1, imx7_suspend_finish);
+		else
+			imx7_suspend_in_ocram_fn(suspend_ocram_base);
 
 		imx_anatop_post_resume();
 		imx_gpcv2_post_resume();
@@ -711,11 +763,15 @@ static int imx7_pm_enter(suspend_state_t state)
 		imx_gpcv2_pre_suspend(true);
 		if (imx_gpcv2_is_mf_mix_off()) {
 			/*
-			 * per design requirement, EXSC for PCIe/EIM
+			 * per design requirement, EXSC for PCIe/EIM/PXP
 			 * will need clock to recover RDC setting on
 			 * resume, so enable PCIe/EIM LPCG for RDC
 			 * recovery when M/F mix off
 			 */
+			writel_relaxed(0x3, pm_info->ccm_base.vbase +
+				CCM_EIM_LPCG);
+			writel_relaxed(0x3, pm_info->ccm_base.vbase +
+				CCM_PXP_LPCG);
 			writel_relaxed(0x3, pm_info->ccm_base.vbase +
 				CCM_PCIE_LPCG);
 			/* stop m4 if mix will also be shutdown */
@@ -756,6 +812,10 @@ static int imx7_pm_enter(suspend_state_t state)
 		if (imx_gpcv2_is_mf_mix_off() ||
 			imx7_pm_is_resume_from_lpsr()) {
 			writel_relaxed(0x0, pm_info->ccm_base.vbase +
+				CCM_EIM_LPCG);
+			writel_relaxed(0x0, pm_info->ccm_base.vbase +
+				CCM_PXP_LPCG);
+			writel_relaxed(0x0, pm_info->ccm_base.vbase +
 				CCM_PCIE_LPCG);
 			memcpy(ocram_base, ocram_saved_in_ddr, ocram_size);
 			imx7_console_restore(console_saved_reg);
@@ -772,7 +832,6 @@ static int imx7_pm_enter(suspend_state_t state)
 				/* restore M4 to run mode */
 				imx_mu_set_m4_run_mode();
 				/* gpc wakeup */
-				imx_mu_lpm_ready(true);
 			}
 		}
 		/* clear LPSR resume address */
@@ -783,6 +842,12 @@ static int imx7_pm_enter(suspend_state_t state)
 	default:
 		return -EINVAL;
 	}
+
+	/* restore system counter's clock to base clock */
+	val = readl_relaxed(system_counter_ctrl_base);
+	val &= ~BM_SYS_COUNTER_CNTCR_FCR1;
+	val |= BM_SYS_COUNTER_CNTCR_FCR0;
+	writel_relaxed(val, system_counter_ctrl_base);
 
 	return 0;
 }
@@ -848,6 +913,7 @@ void __init imx7_pm_map_io(void)
 		return;
 	}
 
+	/* TODO: Handle M4 in TEE? */
 	/* Set all entries to 0 except first 3 words reserved for M4. */
 	memset((void *)(iram_tlb_base_addr + M4_OCRAMS_RESERVED_SIZE),
 		0, MX7_IRAM_TLB_SIZE - M4_OCRAMS_RESERVED_SIZE);
@@ -936,7 +1002,13 @@ static int __init imx7_suspend_init(const struct imx7_pm_socdata *socdata)
 	/* Get the virtual address of the suspend code. */
 	suspend_ocram_base = (void *)IMX_IO_P2V(iram_paddr);
 
-	pm_info = suspend_ocram_base;
+	if (psci_ops.cpu_suspend) {
+		pm_info = kmalloc(sizeof(*pm_info), GFP_KERNEL);
+		if (!pm_info)
+			return -ENOMEM;
+	} else {
+		pm_info = suspend_ocram_base;
+	}
 	/* pbase points to iram_paddr. */
 	pm_info->pbase = iram_paddr;
 	pm_info->resume_addr = virt_to_phys(ca7_cpu_resume);
@@ -1001,6 +1073,9 @@ static int __init imx7_suspend_init(const struct imx7_pm_socdata *socdata)
 				ddrc_offset_array[i][0]);
 		else
 			pm_info->ddrc_val[i][1] = ddrc_offset_array[i][1];
+
+		if (pm_info->ddrc_val[i][0] == 0xd0)
+			pm_info->ddrc_val[i][1] |= 0xc0000000;
 	}
 
 	/* initialize DDRC PHY settings */
@@ -1015,6 +1090,9 @@ static int __init imx7_suspend_init(const struct imx7_pm_socdata *socdata)
 			pm_info->ddrc_phy_val[i][1] =
 				ddrc_phy_offset_array[i][1];
 	}
+
+	if (psci_ops.cpu_suspend)
+		goto put_node;
 
 	imx7_suspend_in_ocram_fn = fncpy(
 		suspend_ocram_base + sizeof(*pm_info),
@@ -1082,6 +1160,9 @@ void __init imx7d_pm_init(void)
 	if (of_get_property(np, "fsl,enable-lpsr", NULL))
 		lpsr_enabled = true;
 
+	if (psci_ops.cpu_suspend)
+		lpsr_enabled = false;
+
 	if (lpsr_enabled) {
 		pr_info("LPSR mode enabled, DSM will go into LPSR mode!\n");
 		lpm_ocram_base = of_iomap(np, 0);
@@ -1110,17 +1191,17 @@ void __init imx7d_pm_init(void)
 		WARN_ON(!system_counter_cmp_base);
 
 		np = of_find_node_by_path(
-			"/soc/aips-bus@30400000/system-counter-ctrl@306c0000");
-		if (np)
-			system_counter_ctrl_base = of_iomap(np, 0);
-		WARN_ON(!system_counter_ctrl_base);
-
-		np = of_find_node_by_path(
 			"/soc/aips-bus@30000000/gpio@30200000");
 		if (np)
 			gpio1_base = of_iomap(np, 0);
 		WARN_ON(!gpio1_base);
 	}
+
+	np = of_find_node_by_path(
+		"/soc/aips-bus@30400000/system-counter-ctrl@306c0000");
+	if (np)
+		system_counter_ctrl_base = of_iomap(np, 0);
+	WARN_ON(!system_counter_ctrl_base);
 
 	if (imx_ddrc_get_ddr_type() == IMX_DDR_TYPE_LPDDR3
 		|| imx_ddrc_get_ddr_type() == IMX_DDR_TYPE_LPDDR2)
@@ -1137,7 +1218,7 @@ void __init imx7d_pm_init(void)
 	WARN_ON(!ocram_saved_in_ddr);
 
 	np = of_find_node_by_path(
-		"/soc/aips-bus@30800000/spba-bus@30800000/serial@30860000");
+		"/soc/aips-bus@30800000/serial@30860000");
 	if (np)
 		console_base = of_iomap(np, 0);
 

@@ -1,0 +1,8 @@
+config GOBISERIAL
+	tristate "USB GobiSerial"
+	default n
+	help
+          Say Y here if you have a GobiSerial USB modem device.  These are
+          usually wireless cellular modems.
+          To compile this driver as a module, choose M here: the
+          module will be called gobiserial.

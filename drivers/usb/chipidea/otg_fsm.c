@@ -490,39 +490,13 @@ static enum hrtimer_restart ci_otg_hrtimer_func(struct hrtimer *t)
 	return HRTIMER_NORESTART;
 }
 
-static void hnp_polling_timer_work(unsigned long arg)
-{
-	struct ci_hdrc *ci = (struct ci_hdrc *)arg;
-
-	schedule_work(&ci->hnp_polling_work);
-}
-
-static void ci_hnp_polling_work(struct work_struct *work)
-{
-	struct ci_hdrc *ci = container_of(work, struct ci_hdrc,
-						hnp_polling_work);
-
-	pm_runtime_get_sync(ci->dev);
-	if (otg_hnp_polling(&ci->fsm) == HOST_REQUEST_FLAG)
-		ci_otg_queue_work(ci);
-	pm_runtime_put_sync(ci->dev);
-}
-
 /* Initialize timers */
 static int ci_otg_init_timers(struct ci_hdrc *ci)
 {
 	hrtimer_init(&ci->otg_fsm_hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 	ci->otg_fsm_hrtimer.function = ci_otg_hrtimer_func;
 
-	setup_timer(&ci->hnp_polling_timer, hnp_polling_timer_work,
-							(unsigned long)ci);
 	return 0;
-}
-
-static void ci_otg_add_hnp_polling_timer(struct ci_hdrc *ci)
-{
-	mod_timer(&ci->hnp_polling_timer,
-			jiffies + msecs_to_jiffies(T_HOST_REQ_POLL));
 }
 
 /* -------------------------------------------------------------*/
@@ -532,12 +506,8 @@ static void ci_otg_fsm_add_timer(struct otg_fsm *fsm, enum otg_fsm_timer t)
 {
 	struct ci_hdrc	*ci = container_of(fsm, struct ci_hdrc, fsm);
 
-	if (t < NUM_OTG_FSM_TIMERS) {
-		if (t == HNP_POLLING)
-			ci_otg_add_hnp_polling_timer(ci);
-		else
-			ci_otg_add_timer(ci, t);
-	}
+	if (t < NUM_OTG_FSM_TIMERS)
+		ci_otg_add_timer(ci, t);
 	return;
 }
 
@@ -605,20 +575,30 @@ static void ci_otg_loc_conn(struct otg_fsm *fsm, int on)
 
 /*
  * Generate SOF by host.
- * This is controlled through suspend/resume the port.
  * In host mode, controller will automatically send SOF.
  * Suspend will block the data on the port.
+ *
+ * This is controlled through usbcore by usb autosuspend,
+ * so the usb device class driver need support autosuspend,
+ * otherwise the bus suspend will not happen.
  */
 static void ci_otg_loc_sof(struct otg_fsm *fsm, int on)
 {
-	struct ci_hdrc	*ci = container_of(fsm, struct ci_hdrc, fsm);
+	struct usb_device *udev;
 
-	if (on)
-		hw_write(ci, OP_PORTSC, PORTSC_W1C_BITS | PORTSC_FPR,
-							PORTSC_FPR);
-	else
-		hw_write(ci, OP_PORTSC, PORTSC_W1C_BITS | PORTSC_SUSP,
-							PORTSC_SUSP);
+	if (!fsm->otg->host)
+		return;
+
+	udev = usb_hub_find_child(fsm->otg->host->root_hub, 1);
+	if (!udev)
+		return;
+
+	if (on) {
+		usb_disable_autosuspend(udev);
+	} else {
+		pm_runtime_set_autosuspend_delay(&udev->dev, 0);
+		usb_enable_autosuspend(udev);
+	}
 }
 
 /*
@@ -930,6 +910,10 @@ int ci_hdrc_otg_fsm_init(struct ci_hdrc *ci)
 	ci->fsm.id = hw_read_otgsc(ci, OTGSC_ID) ? 1 : 0;
 	ci->fsm.otg->state = OTG_STATE_UNDEFINED;
 	ci->fsm.ops = &ci_otg_ops;
+	ci->gadget.hnp_polling_support = 1;
+	ci->fsm.host_req_flag = devm_kzalloc(ci->dev, 1, GFP_KERNEL);
+	if (!ci->fsm.host_req_flag)
+		return -ENOMEM;
 
 	mutex_init(&ci->fsm.lock);
 
@@ -947,12 +931,6 @@ int ci_hdrc_otg_fsm_init(struct ci_hdrc *ci)
 			"Can't register sysfs attr group: %d\n", retval);
 		return retval;
 	}
-
-	INIT_WORK(&ci->hnp_polling_work, ci_hnp_polling_work);
-
-	ci->fsm.host_req_flag = devm_kzalloc(ci->dev, 1, GFP_KERNEL);
-	if (!ci->fsm.host_req_flag)
-		return -ENOMEM;
 
 	/* Enable A vbus valid irq */
 	hw_write_otgsc(ci, OTGSC_AVVIE, OTGSC_AVVIE);
@@ -987,7 +965,6 @@ void ci_hdrc_otg_fsm_remove(struct ci_hdrc *ci)
 		otg_drv_vbus(&ci->fsm, 0);
 
 	sysfs_remove_group(&ci->dev->kobj, &inputs_attr_group);
-	del_timer_sync(&ci->hnp_polling_timer);
 }
 
 /* Restart OTG fsm if resume from power lost */

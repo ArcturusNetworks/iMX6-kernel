@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2016 Vivante Corporation
+*    Copyright (c) 2014 - 2018 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2016 Vivante Corporation
+*    Copyright (C) 2014 - 2018 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -71,15 +71,18 @@ struct _gckVGHARDWARE
     /* Chip characteristics. */
     gceCHIPMODEL                chipModel;
     gctUINT32                   chipRevision;
+    gctUINT32                   productID;
+    gctUINT32                   ecoID;
+    gctUINT32                   customerID;
     gctUINT32                   chipFeatures;
     gctUINT32                   chipMinorFeatures;
     gctUINT32                   chipMinorFeatures2;
-    gctBOOL                     allowFastClear;
 
     /* Features. */
     gctBOOL                     fe20;
     gctBOOL                     vg20;
     gctBOOL                     vg21;
+    gctBOOL                     fc;
 
     /* Event mask. */
     gctUINT32                   eventMask;
@@ -91,9 +94,6 @@ struct _gckVGHARDWARE
     gctUINT32                   powerThread;
     gceCHIPPOWERSTATE           chipPowerState;
     gceCHIPPOWERSTATE           chipPowerStateGlobal;
-    gctISRMANAGERFUNC           startIsr;
-    gctISRMANAGERFUNC           stopIsr;
-    gctPOINTER                  isrContext;
     gctPOINTER                  pageTableDirty;
 #if gcdPOWEROFF_TIMEOUT
     gctUINT32                   powerOffTime;
@@ -101,7 +101,9 @@ struct _gckVGHARDWARE
     gctPOINTER                  powerOffTimer;
 #endif
 
-    gctBOOL                     powerManagement;
+    gcsHAL_QUERY_CHIP_OPTIONS   options;
+
+    gctPOINTER                  featureDatabase;
 };
 
 #endif /* __gc_hal_kernel_hardware_h_ */

@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2016 Vivante Corporation
+*    Copyright (c) 2014 - 2018 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2016 Vivante Corporation
+*    Copyright (C) 2014 - 2018 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -63,9 +63,6 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/signal.h>
-#ifdef FLAREON
-#   include <asm/arch-realview/dove_gpio_irq.h>
-#endif
 #include <linux/interrupt.h>
 #include <linux/vmalloc.h>
 #include <linux/dma-mapping.h>
@@ -91,6 +88,7 @@
 #include "gc_hal_kernel_device.h"
 #include "gc_hal_kernel_os.h"
 #include "gc_hal_kernel_debugfs.h"
+#include "gc_hal_ta.h"
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
@@ -101,24 +99,15 @@
 #define FIND_TASK_BY_PID(x) find_task_by_pid(x)
 #endif
 
-#define _WIDE(string)                L##string
-#define WIDE(string)                _WIDE(string)
-
-#define countof(a)                    (sizeof(a) / sizeof(a[0]))
-
 #ifndef DEVICE_NAME
-#ifdef CONFIG_DOVE_GPU
-#   define DEVICE_NAME              "dove_gpu"
-#else
 #   define DEVICE_NAME              "galcore"
-#endif
 #endif
 
 #ifndef CLASS_NAME
 #   define CLASS_NAME               "graphics_class"
 #endif
 
-#define GetPageCount(size, offset)     ((((size) + ((offset) & ~PAGE_CACHE_MASK)) + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT)
+#define GetPageCount(size, offset)     ((((size) + ((offset) & ~PAGE_MASK)) + PAGE_SIZE - 1) >> PAGE_SHIFT)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (3,7,0)
 #define gcdVM_FLAGS (VM_IO | VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP)
@@ -146,9 +135,17 @@
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (4, 1, 0)
-#define gcdIRQF_FLAG   (0)
+#ifdef gcdIRQ_SHARED
+#       define gcdIRQF_FLAG   (IRQF_SHARED)
+#   else
+#       define gcdIRQF_FLAG   (0)
+#   endif
 #else
-#define gcdIRQF_FLAG   (IRQF_DISABLED)
+#ifdef gcdIRQ_SHARED
+#       define gcdIRQF_FLAG   (IRQF_DISABLED | IRQF_SHARED)
+#   else
+#       define gcdIRQF_FLAG   (IRQF_DISABLED)
+#   endif
 #endif
 
 /******************************************************************************\
@@ -197,11 +194,8 @@ struct _gckOS
     gckGALDEVICE                device;
 
     /* Memory management */
-    gctPOINTER                  memoryLock;
-    gctPOINTER                  memoryMapLock;
-
-    struct _LINUX_MDL           *mdlHead;
-    struct _LINUX_MDL           *mdlTail;
+    struct mutex                mdlMutex;
+    struct list_head            mdlHead;
 
     /* Kernel process ID. */
     gctUINT32                   kernelProcessID;
@@ -209,21 +203,12 @@ struct _gckOS
     /* Signal management. */
 
     /* Lock. */
-    gctPOINTER                  signalMutex;
+    struct mutex                signalMutex;
 
     /* signal id database. */
     gcsINTEGER_DB               signalDB;
 
-#if gcdANDROID_NATIVE_FENCE_SYNC
-    /* Lock. */
-    gctPOINTER                  syncPointMutex;
-
-    /* sync point id database. */
-    gcsINTEGER_DB               syncPointDB;
-#endif
-
     gcsUSER_MAPPING_PTR         userMap;
-    gctPOINTER                  debugLock;
 
     /* workqueue for os timer. */
     struct workqueue_struct *   workqueue;
@@ -238,8 +223,10 @@ struct _gckOS
 
     gcsDEBUGFS_DIR              allocatorDebugfsDir;
 
+    gctBOOL                     allocatorLimitMarker;
+
     /* Lock for register access check. */
-    struct mutex                registerAccessLocks[gcdMAX_GPU_COUNT];
+    spinlock_t                  registerAccessLock;
 
     /* External power states. */
     gctBOOL                     powerStates[gcdMAX_GPU_COUNT];
@@ -255,7 +242,10 @@ typedef struct _gcsSIGNAL * gcsSIGNAL_PTR;
 typedef struct _gcsSIGNAL
 {
     /* Kernel sync primitive. */
-    struct completion obj;
+    volatile unsigned int done;
+    spinlock_t lock;
+
+    wait_queue_head_t wait;
 
     /* Manual reset flag. */
     gctBOOL manualReset;
@@ -266,45 +256,19 @@ typedef struct _gcsSIGNAL
     /* The owner of the signal. */
     gctHANDLE process;
 
-    gckHARDWARE hardware;
-
     /* ID. */
     gctUINT32 id;
-}
-gcsSIGNAL;
 
 #if gcdANDROID_NATIVE_FENCE_SYNC
-typedef struct _gcsSYNC_POINT * gcsSYNC_POINT_PTR;
-typedef struct _gcsSYNC_POINT
-{
-    /* The reference counter. */
-    atomic_t ref;
-
-    /* State. */
-    atomic_t state;
-
-    /* timeline. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,9,0)
+    /* Parent timeline. */
     struct sync_timeline * timeline;
-
-    /* ID. */
-    gctUINT32 id;
-}
-gcsSYNC_POINT;
+#  else
+    struct fence *fence;
+#  endif
 #endif
-
-typedef struct _gcsPageInfo * gcsPageInfo_PTR;
-typedef struct _gcsPageInfo
-{
-    struct page **pages;
-    gctUINT32_PTR pageTable;
-    gctUINT32   extraPage;
-    gctUINT32 address;
-#if gcdPROCESS_ADDRESS_SPACE
-    gckMMU mmu;
-#endif
-    gctBOOL *ref;
 }
-gcsPageInfo;
+gcsSIGNAL;
 
 typedef struct _gcsOSTIMER * gcsOSTIMER_PTR;
 typedef struct _gcsOSTIMER
@@ -324,13 +288,21 @@ gckOS_FreeAllocators(
     gckOS Os
     );
 
+/* Reserved memory. */
 gceSTATUS
-_HandleOuterCache(
-    IN gckOS Os,
-    IN gctUINT32 Physical,
-    IN gctPOINTER Logical,
-    IN gctSIZE_T Bytes,
-    IN gceCACHEOPERATION Type
+gckOS_RequestReservedMemory(
+    gckOS Os,
+    unsigned long Start,
+    unsigned long Size,
+    const char * Name,
+    gctBOOL Requested,
+    void ** MemoryHandle
+    );
+
+void
+gckOS_ReleaseReservedMemory(
+    gckOS Os,
+    void * MemoryHandle
     );
 
 gceSTATUS
@@ -342,20 +314,10 @@ _ConvertLogical2Physical(
     OUT gctPHYS_ADDR_T * Physical
     );
 
-gctSTRING
-_CreateKernelVirtualMapping(
-    IN PLINUX_MDL Mdl
-    );
-
-void
-_DestoryKernelVirtualMapping(
-    IN gctSTRING Addr
-    );
-
-void
-_UnmapUserLogical(
-    IN gctPOINTER Logical,
-    IN gctUINT32  Size
+gctBOOL
+_QuerySignal(
+    IN gckOS Os,
+    IN gctSIGNAL Signal
     );
 
 static inline gctINT
@@ -368,36 +330,6 @@ _GetProcessID(
 #else
     return current->tgid;
 #endif
-}
-
-static inline struct page *
-_NonContiguousToPage(
-    IN struct page ** Pages,
-    IN gctUINT32 Index
-    )
-{
-    gcmkASSERT(Pages != gcvNULL);
-    return Pages[Index];
-}
-
-static inline unsigned long
-_NonContiguousToPfn(
-    IN struct page ** Pages,
-    IN gctUINT32 Index
-    )
-{
-    gcmkASSERT(Pages != gcvNULL);
-    return page_to_pfn(_NonContiguousToPage(Pages, Index));
-}
-
-static inline unsigned long
-_NonContiguousToPhys(
-    IN struct page ** Pages,
-    IN gctUINT32 Index
-    )
-{
-    gcmkASSERT(Pages != gcvNULL);
-    return page_to_phys(_NonContiguousToPage(Pages, Index));
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)

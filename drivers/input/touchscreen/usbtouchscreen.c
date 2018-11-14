@@ -1306,22 +1306,18 @@ static void usbtouch_process_pkt(struct usbtouch_usb *usbtouch,
                                  unsigned char *pkt, int len)
 {
 	struct usbtouch_device_info *type = usbtouch->type;
-        int ix, iy;
 
 	if (!type->read_data(usbtouch, pkt))
 			return;
 
 	input_report_key(usbtouch->input, BTN_TOUCH, usbtouch->touch);
-        ix = usbtouch->x; 
-        iy = usbtouch->y;
-        input_dev_calibrate(usbtouch->input, &ix, &iy, usbtouch->type->max_xc, usbtouch->type->max_yc );
 
 	if (swap_xy) {
-		input_report_abs(usbtouch->input, ABS_X, iy);
-		input_report_abs(usbtouch->input, ABS_Y, ix);
+		input_report_abs(usbtouch->input, ABS_X, usbtouch->y);
+		input_report_abs(usbtouch->input, ABS_Y, usbtouch->x);
 	} else {
-		input_report_abs(usbtouch->input, ABS_X, ix);
-		input_report_abs(usbtouch->input, ABS_Y, iy);
+		input_report_abs(usbtouch->input, ABS_X, usbtouch->x);
+		input_report_abs(usbtouch->input, ABS_Y, usbtouch->y);
 	}
 	if (type->max_press)
 		input_report_abs(usbtouch->input, ABS_PRESSURE, usbtouch->press);

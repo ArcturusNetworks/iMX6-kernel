@@ -1,4 +1,6 @@
 /*
+ * Fundamental constants relating to 802.3
+ *
  * Copyright (C) 1999-2016, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
@@ -19,9 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * Fundamental constants relating to 802.3
  *
- * $Id: 802.3.h 417943 2013-08-13 07:54:04Z $
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: 802.3.h 518342 2014-12-01 23:21:41Z $
  */
 
 #ifndef _802_3_h_

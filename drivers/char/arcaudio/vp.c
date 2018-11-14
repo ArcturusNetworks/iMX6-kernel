@@ -40,32 +40,32 @@
 #define MAX_DEV_NUM	 1
 
 static vp_dev_t vp_dev[MAX_DEV_NUM] __attribute__ ((aligned(32)));
-static vp_dev_t vp_dev_saved[MAX_DEV_NUM] __attribute__ ((aligned(32)));
+//static vp_dev_t vp_dev_saved[MAX_DEV_NUM] __attribute__ ((aligned(32)));
 
-static mcf_tcd_t _mcf_tx_tcd[MAX_TCD_NUM] __attribute__ ((aligned(32)));
-static mcf_tcd_t _mcf_rx_tcd[MAX_TCD_NUM] __attribute__ ((aligned(32)));
+//static mcf_tcd_t _mcf_tx_tcd[MAX_TCD_NUM] __attribute__ ((aligned(32)));
+//static mcf_tcd_t _mcf_rx_tcd[MAX_TCD_NUM] __attribute__ ((aligned(32)));
 
-static frame_t _pcm_tx_buf[MAX_TCD_NUM] __attribute__ ((aligned(32)));
-static frame_t _pcm_rx_buf[MAX_TCD_NUM] __attribute__ ((aligned(32)));
+//static frame_t _pcm_tx_buf[MAX_TCD_NUM] __attribute__ ((aligned(32)));
+//static frame_t _pcm_rx_buf[MAX_TCD_NUM] __attribute__ ((aligned(32)));
 
-static frame_t _pcm_silence __attribute__ ((aligned(32)));
-static frame_t _aec_buf __attribute__ ((aligned(32)));
+//static frame_t _pcm_silence __attribute__ ((aligned(32)));
+//static frame_t _aec_buf __attribute__ ((aligned(32)));
 
-static frame_t _read_buf __attribute__ ((aligned(32)));
-static frame_t _write_buf __attribute__ ((aligned(32)));
+//static frame_t _read_buf __attribute__ ((aligned(32)));
+//static frame_t _write_buf __attribute__ ((aligned(32)));
 
 /******************************************************************************/
 /**********************************************   Driver  FOPS   **************/
 /******************************************************************************/
 static void vp_exit(void);
 
-static int vp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long vp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	vp_dev_t *dev = (vp_dev_t *) file->private_data;
+//	vp_dev_t *dev = (vp_dev_t *) file->private_data;
 	unsigned int ret = 0;
-	unsigned int tmp = 0;
-	unsigned int stat = 0;
-	unsigned long flags;
+//	unsigned int tmp = 0;
+//	unsigned int stat = 0;
+//	unsigned long flags;
 	struct timeval ktv;
 	static int tv_usec;
 	int ptime = 20000;
@@ -93,7 +93,7 @@ static int vp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			u_wait = ptime - tmp_usec;
 			usleep_range(u_wait, u_wait);
 
-			printk("....%s: (%ld usec)\n", __func__, u_wait);
+			printk("....%s: (%d usec)\n", __func__, u_wait);
 
 			break;
 		}
@@ -230,7 +230,7 @@ static int vp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 static ssize_t
 vp_read(struct file *file, char *buf, size_t cnt, loff_t * offset)
 {
-	vp_dev_t *dev = (vp_dev_t *) file->private_data;
+//	vp_dev_t *dev = (vp_dev_t *) file->private_data;
 
 	pr_debug("%s: enter\n", __func__);
 
@@ -240,7 +240,7 @@ vp_read(struct file *file, char *buf, size_t cnt, loff_t * offset)
 static ssize_t
 vp_write(struct file *file, const char *buf, size_t cnt, loff_t * offset)
 {
-	vp_dev_t *dev = (vp_dev_t *) file->private_data;
+//	vp_dev_t *dev = (vp_dev_t *) file->private_data;
 
 	pr_debug("....%s: enter\n", __func__);
 
@@ -250,7 +250,7 @@ vp_write(struct file *file, const char *buf, size_t cnt, loff_t * offset)
 static int vp_open(struct inode *inode, struct file *file)
 {
 	unsigned int minor = MINOR(inode->i_rdev);
-	vp_dev_t *dev = (vp_dev_t *) & vp_dev[minor];
+//	vp_dev_t *dev = (vp_dev_t *) & vp_dev[minor];
 
 	pr_debug("....%s: enter vp%d\n", __func__, minor);
 
@@ -262,7 +262,7 @@ static int vp_open(struct inode *inode, struct file *file)
 static int vp_release(struct inode *inode, struct file *file)
 {
 	unsigned int minor = MINOR(inode->i_rdev);
-	vp_dev_t *dev = (vp_dev_t *) file->private_data;
+//	vp_dev_t *dev = (vp_dev_t *) file->private_data;
 
 	pr_debug("....%s: enter vp%d\n", __func__, minor);
 

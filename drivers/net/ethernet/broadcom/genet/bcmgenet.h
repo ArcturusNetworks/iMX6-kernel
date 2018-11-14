@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Broadcom Corporation
+ * Copyright (c) 2014-2017 Broadcom
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -214,7 +214,9 @@ struct bcmgenet_mib_counters {
 #define  MDIO_REG_SHIFT			16
 #define  MDIO_REG_MASK			0x1F
 
-#define UMAC_RBUF_OVFL_CNT		0x61C
+#define UMAC_RBUF_OVFL_CNT_V1		0x61C
+#define RBUF_OVFL_CNT_V2		0x80
+#define RBUF_OVFL_CNT_V3PLUS		0x94
 
 #define UMAC_MPD_CTRL			0x620
 #define  MPD_EN				(1 << 0)
@@ -224,7 +226,9 @@ struct bcmgenet_mib_counters {
 
 #define UMAC_MPD_PW_MS			0x624
 #define UMAC_MPD_PW_LS			0x628
-#define UMAC_RBUF_ERR_CNT		0x634
+#define UMAC_RBUF_ERR_CNT_V1		0x634
+#define RBUF_ERR_CNT_V2			0x84
+#define RBUF_ERR_CNT_V3PLUS		0x98
 #define UMAC_MDF_ERR_CNT		0x638
 #define UMAC_MDF_CTRL			0x650
 #define UMAC_MDF_ADDR			0x654
@@ -304,13 +308,12 @@ struct bcmgenet_mib_counters {
 #define UMAC_IRQ_RXDMA_MBDONE		(1 << 13)
 #define UMAC_IRQ_RXDMA_PDONE		(1 << 14)
 #define UMAC_IRQ_RXDMA_BDONE		(1 << 15)
-#define UMAC_IRQ_RXDMA_DONE		(UMAC_IRQ_RXDMA_PDONE | \
-					 UMAC_IRQ_RXDMA_BDONE)
+#define UMAC_IRQ_RXDMA_DONE		UMAC_IRQ_RXDMA_MBDONE
 #define UMAC_IRQ_TXDMA_MBDONE		(1 << 16)
 #define UMAC_IRQ_TXDMA_PDONE		(1 << 17)
 #define UMAC_IRQ_TXDMA_BDONE		(1 << 18)
-#define UMAC_IRQ_TXDMA_DONE		(UMAC_IRQ_TXDMA_PDONE | \
-					 UMAC_IRQ_TXDMA_BDONE)
+#define UMAC_IRQ_TXDMA_DONE		UMAC_IRQ_TXDMA_MBDONE
+
 /* Only valid for GENETv3+ */
 #define UMAC_IRQ_MDIO_DONE		(1 << 23)
 #define UMAC_IRQ_MDIO_ERROR		(1 << 24)
@@ -386,7 +389,7 @@ struct bcmgenet_mib_counters {
 #define DMA_RING_BUFFER_SIZE_MASK	0xFFFF
 
 /* DMA interrupt threshold register */
-#define DMA_INTR_THRESHOLD_MASK		0x00FF
+#define DMA_INTR_THRESHOLD_MASK		0x01FF
 
 /* DMA XON/XOFF register */
 #define DMA_XON_THREHOLD_MASK		0xFFFF
@@ -532,6 +535,12 @@ struct bcmgenet_hw_params {
 	u32		flags;
 };
 
+struct bcmgenet_skb_cb {
+	unsigned int bytes_sent;	/* bytes on the wire (no TSB) */
+};
+
+#define GENET_CB(skb)	((struct bcmgenet_skb_cb *)((skb)->cb))
+
 struct bcmgenet_tx_ring {
 	spinlock_t	lock;		/* ring lock */
 	struct napi_struct napi;	/* NAPI per tx queue */
@@ -593,7 +602,9 @@ struct bcmgenet_priv {
 	/* MDIO bus variables */
 	wait_queue_head_t wq;
 	struct phy_device *phydev;
+	bool internal_phy;
 	struct device_node *phy_dn;
+	struct device_node *mdio_dn;
 	struct mii_bus *mii_bus;
 	u16 gphy_rev;
 	struct clk *clk_eee;
@@ -612,10 +623,12 @@ struct bcmgenet_priv {
 	struct work_struct bcmgenet_irq_work;
 	int irq0;
 	int irq1;
-	unsigned int irq0_stat;
-	unsigned int irq1_stat;
 	int wol_irq;
 	bool wol_irq_disabled;
+
+	/* shared status */
+	spinlock_t lock;
+	unsigned int irq0_stat;
 
 	/* HW descriptors/checksum variables */
 	bool desc_64b_en;
@@ -669,7 +682,8 @@ GENET_IO_MACRO(rbuf, GENET_RBUF_OFF);
 
 /* MDIO routines */
 int bcmgenet_mii_init(struct net_device *dev);
-int bcmgenet_mii_config(struct net_device *dev, bool init);
+int bcmgenet_mii_config(struct net_device *dev);
+int bcmgenet_mii_probe(struct net_device *dev);
 void bcmgenet_mii_exit(struct net_device *dev);
 void bcmgenet_mii_reset(struct net_device *dev);
 void bcmgenet_phy_power_set(struct net_device *dev, bool enable);

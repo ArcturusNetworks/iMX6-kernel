@@ -1,5 +1,6 @@
 /*
- * Copyright 2014 Freescale Semiconductor, Inc.
+ * Copyright 2014-2016 Freescale Semiconductor, Inc.
+ * Copyright 2018 NXP
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -47,6 +48,8 @@
 		spi4 = &ecspi5;
 		usbphy0 = &usbphy1;
 		usbphy1 = &usbphy2;
+		lcdif0 = &lcdif1;
+		lcdif1 = &lcdif2;
 	};
 
 	cpus {
@@ -207,6 +210,15 @@
 			clocks = <&clks IMX6SX_CLK_OCRAM>;
 		};
 
+		ocram_optee {
+			compatible = "fsl,optee-lpm-sram";
+			reg = <0x008f8000 0x4000>;
+			overw_reg = <&ocrams_ddr 0x00904000 0x1000>,
+					<&ocram 0x00905000 0x1b000>,
+					<&ocrams 0x00900000 0x4000>;
+			overw_clock = <&ocrams &clks IMX6SX_CLK_OCRAM>;
+		};
+
 		L2: l2-cache@00a02000 {
 			compatible = "arm,pl310-cache";
 			reg = <0x00a02000 0x1000>;
@@ -239,6 +251,10 @@
 			compatible = "fsl,imx6q-caam-secvio";
 			interrupts = <0 20 0x04>;
 			secvio_src = <0x8000001d>;
+			jtag-tamper = "disabled";
+			watchdog-tamper = "enabled";
+			internal-boot-tamper = "enabled";
+			external-pin-tamper = "disabled";
 		};
 
 		gpu: gpu@01800000 {
@@ -309,7 +325,7 @@
 						      "rxtx1", "rxtx2",
 						      "rxtx3", "rxtx4",
 						      "rxtx5", "rxtx6",
-						      "rxtx7", "dma";
+						      "rxtx7", "spba";
 					status = "disabled";
 				};
 
@@ -392,7 +408,7 @@
 						 <&clks IMX6SX_CLK_ESAI_IPG>,
 						 <&clks IMX6SX_CLK_SPBA>;
 					clock-names = "core", "mem", "extal",
-						      "fsys", "dma";
+						      "fsys", "spba";
 					dmas = <&sdma 23 21 0>,
 					       <&sdma 24 21 0>;
 					dma-names = "rx", "tx";
@@ -456,7 +472,7 @@
 						"asrck_1", "asrck_2", "asrck_3", "asrck_4",
 						"asrck_5", "asrck_6", "asrck_7", "asrck_8",
 						"asrck_9", "asrck_a", "asrck_b", "asrck_c",
-						"asrck_d", "asrck_e", "asrck_f", "dma";
+						"asrck_d", "asrck_e", "asrck_f", "spba";
 					dmas = <&sdma 17 23 1>, <&sdma 18 23 1>, <&sdma 19 23 1>,
 						<&sdma 20 23 1>, <&sdma 21 23 1>, <&sdma 22 23 1>;
 					dma-names = "rxa", "rxb", "rxc",
@@ -547,6 +563,7 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 5 26>;
 			};
 
 			gpio2: gpio@020a0000 {
@@ -558,6 +575,7 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 31 20>;
 			};
 
 			gpio3: gpio@020a4000 {
@@ -569,6 +587,7 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 51 29>;
 			};
 
 			gpio4: gpio@020a8000 {
@@ -580,6 +599,7 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 80 32>;
 			};
 
 			gpio5: gpio@020ac000 {
@@ -591,6 +611,7 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 112 24>;
 			};
 
 			gpio6: gpio@020b0000 {
@@ -602,6 +623,7 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 136 12>, <&iomuxc 12 158 11>;
 			};
 
 			gpio7: gpio@020b4000 {
@@ -613,6 +635,7 @@
 				#gpio-cells = <2>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
+				gpio-ranges = <&iomuxc 0 148 10>, <&iomuxc 10 169 2>;
 			};
 
 			mqs: mqs {
@@ -662,7 +685,7 @@
 					     <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
 					     <GIC_SPI 127 IRQ_TYPE_LEVEL_HIGH>;
 
-				regulator-1p1@110 {
+				regulator-1p1 {
 					compatible = "fsl,anatop-regulator";
 					regulator-name = "vdd1p1";
 					regulator-min-microvolt = <800000>;
@@ -691,7 +714,7 @@
 					anatop-enable-bit = <0>;
 				};
 
-				regulator-2p5@130 {
+				regulator-2p5 {
 					compatible = "fsl,anatop-regulator";
 					regulator-name = "vdd2p5";
 					regulator-min-microvolt = <2100000>;
@@ -706,7 +729,7 @@
 					anatop-enable-bit = <0>;
 				};
 
-				reg_arm: regulator-vddcore@140 {
+				reg_arm: regulator-vddcore {
 					compatible = "fsl,anatop-regulator";
 					regulator-name = "vddarm";
 					regulator-min-microvolt = <725000>;
@@ -739,7 +762,7 @@
 					anatop-max-voltage = <1450000>;
 				};
 
-				reg_soc: regulator-vddsoc@140 {
+				reg_soc: regulator-vddsoc {
 					compatible = "fsl,anatop-regulator";
 					regulator-name = "vddsoc";
 					regulator-min-microvolt = <725000>;
@@ -809,7 +832,7 @@
 					compatible = "syscon-poweroff";
 					regmap = <&snvs>;
 					offset = <0x38>;
-					mask = <0x60>;
+					mask = <0x61>;
 					status = "disabled";
 				};
 
@@ -818,7 +841,7 @@
 					regmap = <&snvs>;
 					interrupts = <GIC_SPI 4 IRQ_TYPE_LEVEL_HIGH>;
 					linux,keycode = <KEY_POWER>;
-					wakeup;
+					wakeup-source;
 				};
 			};
 
@@ -920,23 +943,31 @@
 				#size-cells = <1>;
 				reg = <0x2100000 0x40000>;
 				ranges = <0 0x2100000 0x40000>;
-				interrupt-parent = <&intc>; /* interrupts = <0 92 0x4>; */
-				clocks = <&clks IMX6SX_CLK_CAAM_MEM>, <&clks IMX6SX_CLK_CAAM_ACLK>,
-				         <&clks IMX6SX_CLK_CAAM_IPG> ,<&clks IMX6SX_CLK_EIM_SLOW>;
-				clock-names = "caam_mem", "caam_aclk", "caam_ipg", "caam_emi_slow";
+				clocks = <&clks IMX6SX_CLK_CAAM_MEM>,
+					 <&clks IMX6SX_CLK_CAAM_ACLK>,
+					 <&clks IMX6SX_CLK_CAAM_IPG>,
+					 <&clks IMX6SX_CLK_EIM_SLOW>;
+				clock-names = "mem", "aclk", "ipg", "emi_slow";
+
+				sec_ctrl: ctrl@0 {
+					/* CAAM Page 0 only accessible */
+					/*	by secure world */
+					compatible = "fsl,sec-v4.0-ctrl";
+					reg = <0x2100000 0x1000>;
+					secure-status = "okay";
+					status = "disabled";
+				};
 
 				sec_jr0: jr0@1000 {
 					compatible = "fsl,sec-v4.0-job-ring";
 					reg = <0x1000 0x1000>;
-					interrupt-parent = <&intc>;
-					interrupts = <0 105 0x4>;
+					interrupts = <GIC_SPI 105 IRQ_TYPE_LEVEL_HIGH>;
 				};
 
 				sec_jr1: jr1@2000 {
 					compatible = "fsl,sec-v4.0-job-ring";
 					reg = <0x2000 0x1000>;
-					interrupt-parent = <&intc>;
-					interrupts = <0 106 0x4>;
+					interrupts = <GIC_SPI 106 IRQ_TYPE_LEVEL_HIGH>;
 				};
 			};
 
@@ -1146,9 +1177,10 @@
 				reg = <0x021d4000 0x4000>;
 				interrupts = <GIC_SPI 97 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks IMX6SX_CLK_SAI1_IPG>,
+					 <&clks IMX6SX_CLK_DUMMY>,
 					 <&clks IMX6SX_CLK_SAI1>,
 					 <&clks 0>, <&clks 0>;
-				clock-names = "bus", "mclk1", "mclk2", "mclk3";
+				clock-names = "bus", "mclk0", "mclk1", "mclk2", "mclk3";
 				dma-names = "rx", "tx";
 				dmas = <&sdma 31 24 0>, <&sdma 32 24 0>;
 				dma-source = <&gpr 0 15 0 16>;
@@ -1166,12 +1198,12 @@
 				reg = <0x021dc000 0x4000>;
 				interrupts = <GIC_SPI 98 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&clks IMX6SX_CLK_SAI2_IPG>,
+					 <&clks IMX6SX_CLK_DUMMY>,
 					 <&clks IMX6SX_CLK_SAI2>,
 					 <&clks 0>, <&clks 0>;
-				clock-names = "bus", "mclk1", "mclk2", "mclk3";
+				clock-names = "bus", "mclk0", "mclk1", "mclk2", "mclk3";
 				dma-names = "rx", "tx";
-				dmas = <&sdma 33 23 0>, <&sdma 34 23 0>;
-				dma-source = <&gpr 0 17 0 18>;
+				dmas = <&sdma 33 24 0>, <&sdma 34 24 0>;
 				status = "disabled";
 			};
 
@@ -1377,6 +1409,7 @@
 					clocks = <&clks IMX6SX_CLK_VADC>,
 						 <&clks IMX6SX_CLK_CSI>;
 					clock-names = "vadc", "csi";
+					power-domains = <&gpc 2>;
 					gpr = <&gpr>;
 					status = "disabled";
 				};
@@ -1389,6 +1422,8 @@
 				clocks = <&clks IMX6SX_CLK_IPG>;
 				num-channels = <4>;
 				clock-names = "adc";
+				fsl,adck-max-frequency = <30000000>, <40000000>,
+							 <20000000>;
 				status = "disabled";
                         };
 
@@ -1399,6 +1434,8 @@
 				clocks = <&clks IMX6SX_CLK_IPG>;
 				num-channels = <4>;
 				clock-names = "adc";
+				fsl,adck-max-frequency = <30000000>, <40000000>,
+							 <20000000>;
 				status = "disabled";
                         };
 
@@ -1520,7 +1557,13 @@
 			clock-names = "pcie", "pcie_bus", "pcie_phy", "pcie_inbound_axi";
 			pcie-phy-supply = <&reg_pcie_phy>;
 			power-domains = <&gpc 2>;
+			fsl,max-link-speed = <2>;
 			status = "disabled";
 		};
+	};
+
+	gpu-subsystem {
+		compatible = "fsl,imx-gpu-subsystem";
+		cores = <&gpu>;
 	};
 };

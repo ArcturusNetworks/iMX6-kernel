@@ -20,19 +20,31 @@
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
- * $Id: bcmevent.c 487870 2014-06-27 07:37:35Z $
+ *
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: bcmevent.c 530174 2015-01-29 09:47:55Z $
  */
 
 #include <typedefs.h>
 #include <bcmutils.h>
+#include <bcmendian.h>
 #include <proto/ethernet.h>
 #include <proto/bcmeth.h>
 #include <proto/bcmevent.h>
 
+
+/* Table of event name strings for UIs and debugging dumps */
+typedef struct {
+	uint event;
+	const char *name;
+} bcmevent_name_str_t;
+
 /* Use the actual name for event tracing */
 #define BCMEVENT_NAME(_event) {(_event), #_event}
 
-const bcmevent_name_t bcmevent_names[] = {
+static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_SET_SSID),
 	BCMEVENT_NAME(WLC_E_JOIN),
 	BCMEVENT_NAME(WLC_E_START),
@@ -67,6 +79,7 @@ const bcmevent_name_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_BCNLOST_MSG),
 	BCMEVENT_NAME(WLC_E_ROAM_PREP),
 	BCMEVENT_NAME(WLC_E_PFN_NET_FOUND),
+	BCMEVENT_NAME(WLC_E_PFN_SCAN_ALLGONE),
 	BCMEVENT_NAME(WLC_E_PFN_NET_LOST),
 #if defined(IBSS_PEER_DISCOVERY_EVENT)
 	BCMEVENT_NAME(WLC_E_IBSS_ASSOC),
@@ -87,13 +100,10 @@ const bcmevent_name_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_P2P_DISC_LISTEN_COMPLETE),
 #endif
 	BCMEVENT_NAME(WLC_E_RSSI),
-	BCMEVENT_NAME(WLC_E_PFN_SCAN_COMPLETE),
 	BCMEVENT_NAME(WLC_E_EXTLOG_MSG),
-#ifdef WIFI_ACT_FRAME
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME),
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME_RX),
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME_COMPLETE),
-#endif
 	BCMEVENT_NAME(WLC_E_ESCAN_RESULT),
 	BCMEVENT_NAME(WLC_E_ACTION_FRAME_OFF_CHAN_COMPLETE),
 #ifdef WLP2P
@@ -119,7 +129,6 @@ const bcmevent_name_t bcmevent_names[] = {
 #endif
 	BCMEVENT_NAME(WLC_E_ASSOC_REQ_IE),
 	BCMEVENT_NAME(WLC_E_ASSOC_RESP_IE),
-	BCMEVENT_NAME(WLC_E_ACTION_FRAME_RX_NDIS),
 	BCMEVENT_NAME(WLC_E_BEACON_FRAME_RX),
 #ifdef WLTDLS
 	BCMEVENT_NAME(WLC_E_TDLS_PEER_EVENT),
@@ -144,8 +153,78 @@ const bcmevent_name_t bcmevent_names[] = {
 #ifdef PROP_TXSTATUS
 	BCMEVENT_NAME(WLC_E_BCMC_CREDIT_SUPPORT),
 #endif
+	BCMEVENT_NAME(WLC_E_PSTA_PRIMARY_INTF_IND),
 	BCMEVENT_NAME(WLC_E_TXFAIL_THRESH),
+#ifdef GSCAN_SUPPORT
+	BCMEVENT_NAME(WLC_E_PFN_GSCAN_FULL_RESULT),
+	BCMEVENT_NAME(WLC_E_PFN_SWC),
+#endif /* GSCAN_SUPPORT */
+#ifdef WLBSSLOAD_REPORT
+	BCMEVENT_NAME(WLC_E_BSS_LOAD),
+#endif
+#if defined(BT_WIFI_HANDOVER) || defined(WL_TBOW)
+	BCMEVENT_NAME(WLC_E_BT_WIFI_HANDOVER_REQ),
+#endif
+	BCMEVENT_NAME(WLC_E_AUTHORIZED),
+	BCMEVENT_NAME(WLC_E_PROBREQ_MSG_RX),
+	BCMEVENT_NAME(WLC_E_CSA_START_IND),
+	BCMEVENT_NAME(WLC_E_CSA_DONE_IND),
+	BCMEVENT_NAME(WLC_E_CSA_FAILURE_IND),
 	BCMEVENT_NAME(WLC_E_RMC_EVENT),
+	BCMEVENT_NAME(WLC_E_DPSTA_INTF_IND),
 };
 
-const int bcmevent_names_size = ARRAYSIZE(bcmevent_names);
+
+const char *bcmevent_get_name(uint event_type)
+{
+	/* note:  first coded this as a static const but some
+	 * ROMs already have something called event_name so
+	 * changed it so we don't have a variable for the
+	 * 'unknown string
+	 */
+	const char *event_name = NULL;
+
+	uint idx;
+	for (idx = 0; idx < (uint)ARRAYSIZE(bcmevent_names); idx++) {
+
+		if (bcmevent_names[idx].event == event_type) {
+			event_name = bcmevent_names[idx].name;
+			break;
+		}
+	}
+
+	/* if we find an event name in the array, return it.
+	 * otherwise return unknown string.
+	 */
+	return ((event_name) ? event_name : "Unknown Event");
+}
+
+void
+wl_event_to_host_order(wl_event_msg_t * evt)
+{
+	/* Event struct members passed from dongle to host are stored in network
+	* byte order. Convert all members to host-order.
+	*/
+	evt->event_type = ntoh32(evt->event_type);
+	evt->flags = ntoh16(evt->flags);
+	evt->status = ntoh32(evt->status);
+	evt->reason = ntoh32(evt->reason);
+	evt->auth_type = ntoh32(evt->auth_type);
+	evt->datalen = ntoh32(evt->datalen);
+	evt->version = ntoh16(evt->version);
+}
+
+void
+wl_event_to_network_order(wl_event_msg_t * evt)
+{
+	/* Event struct members passed from dongle to host are stored in network
+	* byte order. Convert all members to host-order.
+	*/
+	evt->event_type = hton32(evt->event_type);
+	evt->flags = hton16(evt->flags);
+	evt->status = hton32(evt->status);
+	evt->reason = hton32(evt->reason);
+	evt->auth_type = hton32(evt->auth_type);
+	evt->datalen = hton32(evt->datalen);
+	evt->version = hton16(evt->version);
+}

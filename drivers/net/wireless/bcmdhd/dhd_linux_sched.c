@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_linux_sched.c 457596 2014-02-24 02:24:14Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: dhd_linux_sched.c 514727 2014-11-12 03:02:48Z $
  */
 #include <linux/kernel.h>
 #include <linux/module.h>

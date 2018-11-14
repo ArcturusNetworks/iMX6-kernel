@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmdefs.h 433011 2013-10-30 09:19:54Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: bcmdefs.h 601026 2015-11-20 06:53:19Z $
  */
 
 #ifndef	_bcmdefs_h_
@@ -76,13 +79,8 @@
 #undef BCM47XX_CA9
 
 #ifndef BCMFASTPATH
-#if defined(BCM47XX_CA9)
-#define BCMFASTPATH		__attribute__ ((__section__ (".text.fastpath")))
-#define BCMFASTPATH_HOST	__attribute__ ((__section__ (".text.fastpath_host")))
-#else
 #define BCMFASTPATH
 #define BCMFASTPATH_HOST
-#endif
 #endif /* BCMFASTPATH */
 
 
@@ -93,18 +91,7 @@
  */
 	#define BCMRAMFN(_fn)	_fn
 
-
-
-/* Put some library data/code into ROM to reduce RAM requirements */
-#define _data	_data
-#define BCMROMDAT_NAME(_data)	_data
-#define _fn		_fn
-#define _fn	_fn
 #define STATIC	static
-#define BCMROMDAT_ARYSIZ(data)	ARRAYSIZE(data)
-#define BCMROMDAT_SIZEOF(data)	sizeof(data)
-#define BCMROMDAT_APATCH(data)
-#define BCMROMDAT_SPATCH(data)
 
 /* Bus types */
 #define	SI_BUS			0	/* SOC Interconnect */
@@ -153,11 +140,19 @@
 #define CHIPREV(rev)	(rev)
 #endif
 
+#ifdef BCMPCIEREV
+#define PCIECOREREV(rev)	(BCMPCIEREV)
+#else
+#define PCIECOREREV(rev)	(rev)
+#endif
+
 /* Defines for DMA Address Width - Shared between OSL and HNDDMA */
 #define DMADDR_MASK_32 0x0		/* Address mask for 32-bits */
 #define DMADDR_MASK_30 0xc0000000	/* Address mask for 30-bits */
+#define DMADDR_MASK_26 0xFC000000	/* Address maks for 26-bits */
 #define DMADDR_MASK_0  0xffffffff	/* Address mask for 0-bits (hi-part) */
 
+#define	DMADDRWIDTH_26  26 /* 26-bit addressing capability */
 #define	DMADDRWIDTH_30  30 /* 30-bit addressing capability */
 #define	DMADDRWIDTH_32  32 /* 32-bit addressing capability */
 #define	DMADDRWIDTH_63  63 /* 64-bit addressing capability */
@@ -185,6 +180,10 @@ typedef dma64addr_t dmaaddr_t;
 #define PHYSADDRHISET(_pa, _val) PHYSADDR64HISET(_pa, _val)
 #define PHYSADDRLO(_pa)  PHYSADDR64LO(_pa)
 #define PHYSADDRLOSET(_pa, _val) PHYSADDR64LOSET(_pa, _val)
+#define PHYSADDRTOULONG(_pa, _ulong) \
+	do { \
+		_ulong = ((unsigned long)(_pa).hiaddr << 32) | ((_pa).loaddr); \
+	} while (0)
 
 #else
 typedef unsigned long dmaaddr_t;
@@ -196,6 +195,7 @@ typedef unsigned long dmaaddr_t;
 		(_pa) = (_val);			\
 	} while (0)
 #endif /* BCMDMA64OSL */
+#define PHYSADDRISZERO(_pa) (PHYSADDRLO(_pa) == 0 && PHYSADDRHI(_pa) == 0)
 
 /* One physical DMA segment */
 typedef struct  {
@@ -224,11 +224,7 @@ typedef struct {
 /* add 40 bytes to allow for extra RPC header and info  */
 #define BCMEXTRAHDROOM 260
 #else /* BCM_RPC_NOCOPY || BCM_RPC_TXNOCOPY */
-#if defined(BCM47XX_CA9)
-#define BCMEXTRAHDROOM 224
-#else
 #define BCMEXTRAHDROOM 204
-#endif /* linux && BCM47XX_CA9 */
 #endif /* BCM_RPC_NOCOPY || BCM_RPC_TXNOCOPY */
 
 /* Packet alignment for most efficient SDIO (can change based on platform) */
@@ -287,8 +283,13 @@ typedef struct {
 
 /* Max. nvram variable table size */
 #ifndef MAXSZ_NVRAM_VARS
-#define	MAXSZ_NVRAM_VARS	4096
-#endif
+#ifdef LARGE_NVRAM_MAXSZ
+#define MAXSZ_NVRAM_VARS	LARGE_NVRAM_MAXSZ
+#else
+/* SROM12 changes */
+#define	MAXSZ_NVRAM_VARS	6144
+#endif /* LARGE_NVRAM_MAXSZ */
+#endif /* !MAXSZ_NVRAM_VARS */
 
 
 
@@ -309,18 +310,52 @@ typedef struct {
 #else
 	#define BCMLFRAG_ENAB()		(0)
 #endif /* BCMLFRAG_ENAB */
+#define	RXMODE1	1	/* descriptor split */
+#define	RXMODE2	2	/* descriptor split + classification */
+#define	RXMODE3	3	/* fifo split + classification */
+#define	RXMODE4	4	/* fifo split + classification + hdr conversion */
+
 #ifdef BCMSPLITRX /* BCMLFRAG support enab macros  */
 	extern bool _bcmsplitrx;
+	extern uint8 _bcmsplitrx_mode;
 	#if defined(WL_ENAB_RUNTIME_CHECK) || !defined(DONGLEBUILD)
 		#define BCMSPLITRX_ENAB() (_bcmsplitrx)
+		#define BCMSPLITRX_MODE() (_bcmsplitrx_mode)
 	#elif defined(BCMSPLITRX_DISABLED)
 		#define BCMSPLITRX_ENAB()	(0)
+		#define BCMSPLITRX_MODE()	(0)
 	#else
 		#define BCMSPLITRX_ENAB()	(1)
+		#define BCMSPLITRX_MODE() (_bcmsplitrx_mode)
 	#endif
 #else
 	#define BCMSPLITRX_ENAB()		(0)
+	#define BCMSPLITRX_MODE()		(0)
 #endif /* BCMSPLITRX */
+
+#ifdef BCMPCIEDEV /* BCMPCIEDEV support enab macros */
+extern bool _pciedevenab;
+	#if defined(WL_ENAB_RUNTIME_CHECK)
+		#define BCMPCIEDEV_ENAB() (_pciedevenab)
+	#elif defined(BCMPCIEDEV_ENABLED)
+		#define BCMPCIEDEV_ENAB()	1
+	#else
+		#define BCMPCIEDEV_ENAB()	0
+	#endif
+#else
+	#define BCMPCIEDEV_ENAB()	0
+#endif /* BCMPCIEDEV */
+
+#define SPLIT_RXMODE1()	((BCMSPLITRX_MODE() == RXMODE1))
+#define SPLIT_RXMODE2()	((BCMSPLITRX_MODE() == RXMODE2))
+#define SPLIT_RXMODE3()	((BCMSPLITRX_MODE() == RXMODE3))
+#define SPLIT_RXMODE4()	((BCMSPLITRX_MODE() == RXMODE4))
+
+#define PKT_CLASSIFY()	(SPLIT_RXMODE2() || SPLIT_RXMODE3() || SPLIT_RXMODE4())
+#define RXFIFO_SPLIT()	(SPLIT_RXMODE3() || SPLIT_RXMODE4())
+#define HDR_CONV()	(SPLIT_RXMODE4())
+
+#define PKT_CLASSIFY_EN(x)	((PKT_CLASSIFY()) && (PKT_CLASSIFY_FIFO == (x)))
 #ifdef BCM_SPLITBUF
 	extern bool _bcmsplitbuf;
 	#if defined(WL_ENAB_RUNTIME_CHECK) || !defined(DONGLEBUILD)
@@ -333,6 +368,7 @@ typedef struct {
 #else
 	#define BCM_SPLITBUF_ENAB()		(0)
 #endif	/* BCM_SPLITBUF */
+
 /* Max size for reclaimable NVRAM array */
 #ifdef DL_NVRAM
 #define NVRAM_ARRAY_MAXSIZE	DL_NVRAM
@@ -340,9 +376,7 @@ typedef struct {
 #define NVRAM_ARRAY_MAXSIZE	MAXSZ_NVRAM_VARS
 #endif /* DL_NVRAM */
 
-#ifdef BCMUSBDEV_ENABLED
 extern uint32 gFWID;
-#endif
 
 
 #endif /* _bcmdefs_h_ */

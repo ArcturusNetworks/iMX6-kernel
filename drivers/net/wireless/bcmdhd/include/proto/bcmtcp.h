@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmtcp.h 457888 2014-02-25 03:34:39Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: bcmtcp.h 518342 2014-12-01 23:21:41Z $
  */
 
 #ifndef _bcmtcp_h_

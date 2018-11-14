@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2011-2016 Freescale Semiconductor, Inc.
  *
  * The code contained herein is licensed under the GNU General Public
  * License. You may obtain a copy of the GNU General Public License
@@ -187,6 +187,7 @@ struct mxc_hdmi *g_hdmi;
 
 static bool hdmi_inited;
 static bool hdcp_init;
+static struct regulator *hdmi_regulator;
 
 extern const struct fb_videomode mxc_cea_mode[64];
 extern void mxc_hdmi_cec_handle(u16 cec_stat);
@@ -220,7 +221,7 @@ static inline int cpu_is_imx6dl(struct mxc_hdmi *hdmi)
 	return hdmi->cpu_type == IMX6DL_HDMI;
 }
 #ifdef DEBUG
-static void dump_fb_videomode(struct fb_videomode *m)
+static void dump_fb_videomode(const struct fb_videomode *m)
 {
 	pr_debug("fb_videomode = %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
 		m->refresh, m->xres, m->yres, m->pixclock, m->left_margin,
@@ -228,7 +229,7 @@ static void dump_fb_videomode(struct fb_videomode *m)
 		m->hsync_len, m->vsync_len, m->sync, m->vmode, m->flag);
 }
 #else
-static void dump_fb_videomode(struct fb_videomode *m)
+static void dump_fb_videomode(const struct fb_videomode *m)
 {}
 #endif
 
@@ -1694,8 +1695,8 @@ static void mxc_hdmi_enable_video_path(struct mxc_hdmi *hdmi)
 	hdmi_writeb(0x16, HDMI_FC_CH1PREAM);
 	hdmi_writeb(0x21, HDMI_FC_CH2PREAM);
 
+	clkdis = hdmi_readb(HDMI_MC_CLKDIS);
 	/* Enable pixel clock and tmds data path */
-	clkdis = 0x7F;
 	clkdis &= ~HDMI_MC_CLKDIS_PIXELCLK_DISABLE;
 	hdmi_writeb(clkdis, HDMI_MC_CLKDIS);
 
@@ -1830,27 +1831,35 @@ static void  mxc_hdmi_default_edid_cfg(struct mxc_hdmi *hdmi)
 
 static void  mxc_hdmi_default_modelist(struct mxc_hdmi *hdmi)
 {
-	u32 i;
-	const struct fb_videomode *mode;
+	struct fb_modelist *modelist;
+	struct fb_videomode *m;
 
 	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
 
-	/* If not EDID data read, set up default modelist  */
+	/* If no EDID data read, set up default modelist; since we don't know
+	 * the supported modes of the current sink, we will use only one mode in
+	 * this modelist:
+	 * the default_mode set up at init (usually got from cmdline)
+	 */
 	dev_info(&hdmi->pdev->dev, "create default modelist\n");
 
-	console_lock();
+	/* If the current modelist is already default, don't re-create it*/
+	if (list_is_singular(&hdmi->fbi->modelist)) {
+		modelist = list_entry((&hdmi->fbi->modelist)->next,
+				struct fb_modelist, list);
+		m = &modelist->mode;
+		if (fb_mode_is_equal(m, &hdmi->default_mode)) {
+			dev_info(&hdmi->pdev->dev,
+				"Modelist is already default, no need to re-create!\n");
+			return;
+		}
 
-	fb_destroy_modelist(&hdmi->fbi->modelist);
-
-	/*Add all no interlaced CEA mode to default modelist */
-	for (i = 0; i < ARRAY_SIZE(mxc_cea_mode); i++) {
-		mode = &mxc_cea_mode[i];
-		if (!(mode->vmode & FB_VMODE_INTERLACED) && (mode->xres != 0))
-			fb_add_videomode(mode, &hdmi->fbi->modelist);
 	}
 
+	console_lock();
+	fb_destroy_modelist(&hdmi->fbi->modelist);
+	fb_add_videomode(&hdmi->default_mode, &hdmi->fbi->modelist);
 	fb_new_modelist(hdmi->fbi);
-
 	console_unlock();
 }
 
@@ -1978,10 +1987,13 @@ static void mxc_hdmi_power_off(struct mxc_dispdrv_handle *disp,
 
 static void mxc_hdmi_cable_disconnected(struct mxc_hdmi *hdmi)
 {
-	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
+	u8 clkdis;
 
-	/* Disable All HDMI clock */
-	hdmi_writeb(0xff, HDMI_MC_CLKDIS);
+	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
+	/* Disable All HDMI clock and bypass cec */
+	clkdis = hdmi_readb(HDMI_MC_CLKDIS);
+	clkdis |= 0x5f;
+	hdmi_writeb(clkdis, HDMI_MC_CLKDIS);
 
 	mxc_hdmi_phy_disable(hdmi);
 
@@ -2583,17 +2595,16 @@ static int mxc_hdmi_disp_init(struct mxc_dispdrv_handle *disp,
 
 	/* Find a nearest mode in default modelist */
 	fb_var_to_videomode(&m, &hdmi->fbi->var);
-	dump_fb_videomode(&m);
 
 	hdmi->dft_mode_set = false;
-	/* Save default video mode */
-	memcpy(&hdmi->default_mode, &m, sizeof(struct fb_videomode));
-
 	mode = fb_find_nearest_mode(&m, &hdmi->fbi->modelist);
 	if (!mode) {
 		pr_err("%s: could not find mode in modelist\n", __func__);
 		return -1;
 	}
+	dump_fb_videomode(mode);
+	/* Save default video mode */
+	memcpy(&hdmi->default_mode, mode, sizeof(struct fb_videomode));
 
 	fb_videomode_to_var(&hdmi->fbi->var, mode);
 
@@ -2726,13 +2737,14 @@ static long mxc_hdmi_ioctl(struct file *file,
 				sizeof(g_hdmi->hdmi_data)) ? -EFAULT : 0;
 		break;
 	case HDMI_IOC_GET_CPU_TYPE:
-		*argp = g_hdmi->cpu_type;
+		ret = put_user(g_hdmi->cpu_type, argp);
 		break;
 	default:
 		pr_debug("Unsupport cmd %d\n", cmd);
 		break;
-     }
-     return ret;
+	}
+
+	return ret;
 }
 
 static int mxc_hdmi_release(struct inode *inode, struct file *file)
@@ -2828,6 +2840,18 @@ static int mxc_hdmi_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, hdmi);
 
+	hdmi_regulator = devm_regulator_get(&pdev->dev, "HDMI");
+	if (!IS_ERR(hdmi_regulator)) {
+		ret = regulator_enable(hdmi_regulator);
+		if (ret) {
+			dev_err(&pdev->dev, "enable 5v hdmi regulator failed\n");
+			goto edispdrv;
+		}
+	} else {
+		hdmi_regulator = NULL;
+		dev_warn(&pdev->dev, "No hdmi 5v supply\n");
+	}
+
 	return 0;
 edispdrv:
 	iounmap(hdmi->gpr_base);
@@ -2857,6 +2881,10 @@ static int mxc_hdmi_remove(struct platform_device *pdev)
 	/* No new work will be scheduled, wait for running ISR */
 	free_irq(irq, hdmi);
 	kfree(hdmi);
+
+	if (hdmi_regulator)
+		regulator_disable(hdmi_regulator);
+
 	g_hdmi = NULL;
 
 	return 0;

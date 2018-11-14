@@ -1,7 +1,7 @@
 
 /*
  * SNVS Security Violation Handler
- * Copyright (C) 2012-2015 Freescale Semiconductor, Inc., All Rights Reserved
+ * Copyright (C) 2012-2016 Freescale Semiconductor, Inc., All Rights Reserved
  */
 
 #include "compat.h"
@@ -11,6 +11,13 @@
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
+
+/* The driver is matched with node caam_snvs to get regmap
+ * It will then retrieve interruption and tamper alarm configuration from
+ * node caam-secvio searching for the compat string "fsl,imx6q-caam-secvio"
+ */
+#define DRIVER_NAME "caam-snvs"
+
 /*
  * These names are associated with each violation handler.
  * The source names were taken from MX6, and are based on recommendations
@@ -62,7 +69,7 @@ static irqreturn_t snvs_secvio_interrupt(int irq, void *snvsdev)
 	}
 
 	/* Now ACK cause */
-	setbits32(&svpriv->svregs->hp.secvio_status, svpriv->irqcause);
+	clrsetbits_32(&svpriv->svregs->hp.secvio_status, 0, svpriv->irqcause);
 
 	/* And run deferred service */
 	preempt_disable();
@@ -93,7 +100,7 @@ static void snvs_secvio_dispatch(unsigned long indev)
 		};
 
 	/* Re-enable now-serviced interrupts */
-	setbits32(&svpriv->svregs->hp.secvio_intcfg, svpriv->irqcause);
+	clrsetbits_32(&svpriv->svregs->hp.secvio_intcfg, 0, svpriv->irqcause);
 }
 
 /*
@@ -205,6 +212,8 @@ static int snvs_secvio_probe(struct platform_device *pdev)
 	struct snvs_full __iomem *snvsregs;
 	int i, error;
 	u32 hpstate;
+	const void *jtd, *wtd, *itd, *etd;
+	u32 td_en;
 
 	svpriv = kzalloc(sizeof(struct snvs_secvio_drv_private), GFP_KERNEL);
 	if (!svpriv)
@@ -217,15 +226,44 @@ static int snvs_secvio_probe(struct platform_device *pdev)
 
 	npirq = of_find_compatible_node(NULL, NULL, "fsl,imx6q-caam-secvio");
 	if (!npirq) {
-		dev_err(svdev, "can't identify secvio interrupt\n");
+		dev_err(svdev, "can't find secvio node\n");
 		kfree(svpriv);
 		return -EINVAL;
 	}
 	svpriv->irq = irq_of_parse_and_map(npirq, 0);
 	if (svpriv->irq <= 0) {
+		dev_err(svdev, "can't identify secvio interrupt\n");
 		kfree(svpriv);
 		return -EINVAL;
 	}
+
+	jtd = of_get_property(npirq, "jtag-tamper", NULL);
+	wtd = of_get_property(npirq, "watchdog-tamper", NULL);
+	itd = of_get_property(npirq, "internal-boot-tamper", NULL);
+	etd = of_get_property(npirq, "external-pin-tamper", NULL);
+	if (!jtd | !wtd | !itd | !etd ) {
+		dev_err(svdev, "can't identify all tamper alarm configuration\n");
+		kfree(svpriv);
+		return -EINVAL;
+	}
+
+	/*
+	 * Configure all sources  according to device tree property.
+	 * If the property is enabled then the source is ser as
+	 * fatal violations except LP section,
+	 * source #5 (typically used as an external tamper detect), and
+	 * source #3 (typically unused). Whenever the transition to
+	 * secure mode has occurred, these will now be "fatal" violations
+	 */
+	td_en = HP_SECVIO_INTEN_SRC0;
+	if (!strcmp(jtd, "enabled"))
+		td_en |= HP_SECVIO_INTEN_SRC1;
+	if (!strcmp(wtd, "enabled"))
+		td_en |= HP_SECVIO_INTEN_SRC2;
+	if (!strcmp(itd, "enabled"))
+		td_en |= HP_SECVIO_INTEN_SRC4;
+	if (!strcmp(etd, "enabled"))
+		td_en |= HP_SECVIO_INTEN_SRC5;
 
 	snvsregs = of_iomap(np, 0);
 	if (!snvsregs) {
@@ -240,6 +278,10 @@ static int snvs_secvio_probe(struct platform_device *pdev)
 		svpriv->clk = NULL;
 	}
 
+	/* Write the Secvio Enable Config the SVCR */
+	wr_reg32(&svpriv->svregs->hp.secvio_ctl, td_en);
+	wr_reg32(&svpriv->svregs->hp.secvio_intcfg, td_en);
+
 	 /* Device data set up. Now init interrupt source descriptions */
 	for (i = 0; i < MAX_SECVIO_SOURCES; i++) {
 		svpriv->intsrc[i].intname = violation_src_name[i];
@@ -251,7 +293,7 @@ static int snvs_secvio_probe(struct platform_device *pdev)
 			     (unsigned long)svdev);
 
 	error = request_irq(svpriv->irq, snvs_secvio_interrupt,
-			    IRQF_SHARED, "snvs-secvio", svdev);
+			    IRQF_SHARED, DRIVER_NAME, svdev);
 	if (error) {
 		dev_err(svdev, "can't connect secvio interrupt\n");
 		irq_dispose_mapping(svpriv->irq);
@@ -262,15 +304,6 @@ static int snvs_secvio_probe(struct platform_device *pdev)
 	}
 
 	clk_prepare_enable(svpriv->clk);
-	/*
-	 * Configure all sources as fatal violations except LP section,
-	 * source #5 (typically used as an external tamper detect), and
-	 * source #3 (typically unused). Whenever the transition to
-	 * secure mode has occurred, these will now be "fatal" violations
-	 */
-	wr_reg32(&svpriv->svregs->hp.secvio_intcfg,
-		 HP_SECVIO_INTEN_SRC4 | HP_SECVIO_INTEN_SRC2 |
-		 HP_SECVIO_INTEN_SRC1 | HP_SECVIO_INTEN_SRC0);
 
 	hpstate = (rd_reg32(&svpriv->svregs->hp.status) &
 			    HP_STATUS_SSM_ST_MASK) >> HP_STATUS_SSM_ST_SHIFT;
@@ -292,7 +325,7 @@ MODULE_DEVICE_TABLE(of, snvs_secvio_match);
 
 static struct platform_driver snvs_secvio_driver = {
 	.driver = {
-		.name = "snvs-secvio",
+		.name = DRIVER_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = snvs_secvio_match,
 	},

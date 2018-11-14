@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_iw.h 490106 2014-07-09 12:35:17Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: wl_iw.h 514727 2014-11-12 03:02:48Z $
  */
 
 #ifndef _wl_iw_h_
@@ -54,6 +57,8 @@
 #define PNODEBUG_SET_CMD			"PNODEBUG"
 #define TXPOWER_SET_CMD			"TXPOWER"
 
+#define MAC2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5]
+#define MACSTR "%02x:%02x:%02x:%02x:%02x:%02x"
 
 /* Structure to keep global parameters */
 typedef struct wl_iw_extra_params {
@@ -125,6 +130,10 @@ extern void wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data);
 extern int wl_iw_get_wireless_stats(struct net_device *dev, struct iw_statistics *wstats);
 int wl_iw_attach(struct net_device *dev, void * dhdp);
 int wl_iw_send_priv_event(struct net_device *dev, char *flag);
+#ifdef WL_ESCAN
+int wl_iw_handle_scanresults_ies(char **event_p, char *end,
+	struct iw_request_info *info, wl_bss_info_t *bi);
+#endif
 
 void wl_iw_detach(void);
 

@@ -21,6 +21,7 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/gpio.h>
+#include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/io.h>
 
@@ -1014,8 +1015,7 @@ static int s3cmci_setup_data(struct s3cmci_host *host, struct mmc_data *data)
 	if (host->bus_width == MMC_BUS_WIDTH_4)
 		dcon |= S3C2410_SDIDCON_WIDEBUS;
 
-	if (!(data->flags & MMC_DATA_STREAM))
-		dcon |= S3C2410_SDIDCON_BLOCKMODE;
+	dcon |= S3C2410_SDIDCON_BLOCKMODE;
 
 	if (data->flags & MMC_DATA_WRITE) {
 		dcon |= S3C2410_SDIDCON_TXAFTERRESP;
@@ -1105,7 +1105,7 @@ static int s3cmci_prepare_dma(struct s3cmci_host *host, struct mmc_data *data)
 		conf.direction = DMA_MEM_TO_DEV;
 
 	dma_map_sg(mmc_dev(host->mmc), data->sg, data->sg_len,
-			     rw ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+		   mmc_get_dma_dir(data));
 
 	dmaengine_slave_config(host->dma, &conf);
 	desc = dmaengine_prep_slave_sg(host->dma, data->sg, data->sg_len,
@@ -1122,7 +1122,7 @@ static int s3cmci_prepare_dma(struct s3cmci_host *host, struct mmc_data *data)
 
 unmap_exit:
 	dma_unmap_sg(mmc_dev(host->mmc), data->sg, data->sg_len,
-			     rw ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+		     mmc_get_dma_dir(data));
 	return -ENOMEM;
 }
 
@@ -1366,7 +1366,7 @@ static struct s3c24xx_mci_pdata s3cmci_def_pdata = {
 	 .no_detect = 1,
 };
 
-#ifdef CONFIG_CPU_FREQ
+#ifdef CONFIG_ARM_S3C24XX_CPUFREQ
 
 static int s3cmci_cpufreq_transition(struct notifier_block *nb,
 				     unsigned long val, void *data)
@@ -1856,7 +1856,7 @@ static int s3cmci_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct platform_device_id s3cmci_driver_ids[] = {
+static const struct platform_device_id s3cmci_driver_ids[] = {
 	{
 		.name	= "s3c2410-sdi",
 		.driver_data	= 0,

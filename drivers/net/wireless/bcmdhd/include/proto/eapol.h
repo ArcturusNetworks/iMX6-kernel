@@ -24,8 +24,11 @@
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
+ * 
  *
- * $Id: eapol.h 526865 2015-01-15 07:44:19Z $
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: eapol.h 518342 2014-12-01 23:21:41Z $
  */
 
 #ifndef _eapol_h_
@@ -131,6 +134,7 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 #define EAPOL_WPA_KEY_LEN 		95
 
 /* WPA/802.11i/WPA2 KEY KEY_INFO bits */
+#define WPA_KEY_DESC_OSEN	0x0
 #define WPA_KEY_DESC_V1		0x01
 #define WPA_KEY_DESC_V2		0x02
 #define WPA_KEY_DESC_V3		0x03

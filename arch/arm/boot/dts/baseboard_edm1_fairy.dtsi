@@ -1,9 +1,8 @@
 /*
- * Copyright 2016 Technexion Ltd.
+ * Copyright 2018 Technexion Ltd.
  *
- * Author: Wig Cheng <wig.cheng@technexion.com>
- *	   Richard Hu <richard.hu@technexion.com>
- *	   Tapani Utriainen <tapani@technexion.com>
+ * Author: Tapani Utriainen <tapani@technexion.com>
+ *         Richard Hu <richard.hu@technexion.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,35 +15,47 @@
 / {
 	gpio-edm {
 		compatible = "gpio-edm";
-/* custom GPIO may be from GPIO expander on CPU module */
-#ifdef EDM1_EXT_GPIO_IOMUX_FAIRY
-		pinctrl-names = "default";
-		pinctrl-0 = <EDM1_EXT_GPIO_IOMUX_FAIRY>;
-#endif
+
 		gpio_p256 {
 			label = "GPIO_P256";
-			gpios = <&EDM1_EXT_GPIO_P256 1>;
-			dir   = "in";
+			gpios = <&EDM_EXT_GPIO_P256 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
+
+		gpio_p257 {
+			label = "GPIO_P257";
+			gpios = <&EDM_EXT_GPIO_P257 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
+		};
+
 		gpio_p258 {
 			label = "GPIO_P258";
-			gpios = <&EDM1_EXT_GPIO_P258 1>;
-			dir   = "in";
+			gpios = <&EDM_EXT_GPIO_P258 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
-		gpio_p259 {
-			label = "GPIO_P259";
-			gpios = <&EDM1_EXT_GPIO_P259 1>;
-			dir   = "in";
-		};
+
 		gpio_p260 {
 			label = "GPIO_P260";
-			gpios = <&EDM1_EXT_GPIO_P260 1>;
-			dir   = "in";
+			gpios = <&EDM_EXT_GPIO_P260 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
+
+		gpio_p261 {
+			label = "GPIO_P261";
+			gpios = <&EDM_EXT_GPIO_P261 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
+		};
+
 		gpio_p262 {
 			label = "GPIO_P262";
-			gpios = <&EDM1_EXT_GPIO_P262 1>;
-			dir   = "in";
+			gpios = <&EDM_EXT_GPIO_P262 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
+		};
+
+		gpio_p264 {
+			label = "GPIO_P264";
+			gpios = <&EDM_EXT_GPIO_P264 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
 	};
 
@@ -52,48 +63,46 @@
 		compatible = "fsl,imx-sgtl5000",
 			     "fsl,imx-audio-sgtl5000";
 		model = "audio-sgtl5000";
-		ssi-controller = <&EDM1_AUD_I2S_CHANNEL>;
+		ssi-controller = <&EDM_AUDA_I2S_CHANNEL>;
 		audio-codec = <&codec>;
 		audio-routing =
 			"MIC_IN", "Mic Jack",
 			"Mic Jack", "Mic Bias",
 			"Headphone Jack", "HP_OUT";
-		mux-int-port = <EDM1_AUD_MUX_INT>;
-		mux-ext-port = <EDM1_AUD_MUX_EXT>;
+#if defined(EDM_AUDA_MUX_INT) && defined(EDM_AUDA_MUX_EXT)
+		mux-int-port = <EDM_AUDA_MUX_INT>;
+		mux-ext-port = <EDM_AUDA_MUX_EXT>;
+#else
+		fsl,no-audmux = "true";
+#endif
 	};
 };
 
-&i2c1 {
+&EDM_I2CA {
 	status = "okay";
 };
 
-&i2c2 {
+&EDM_I2CB {
 	status = "okay";
 
 	codec: sgtl5000@0a {
 		compatible = "fsl,sgtl5000";
 		reg = <0x0a>;
-		clocks = <&EDM1_AUD_CLK_SRC>;
+		clocks = <&EDM_AUDA_CLK_SRC>;
 		VDDA-supply = <&reg_2p5v>;
 		VDDIO-supply = <&reg_3p3v>;
 	};
 
-	polytouch: edt-ft5x06@38 {
-		compatible = "edt,edt-ft5x06";
-		reg = <0x38>;
-#ifdef EDM1_EXT_FT5X06_IOMUX_FAIRY
-		pinctrl-names = "default";
-		pinctrl-0 = <EDM1_EXT_FT5X06_IOMUX_FAIRY>; /* Touch IRQ and Touch Reset */
-#endif
-		interrupt-parent = <&GPIO_BANK(EDM1_EXT_GPIO_P261)>; /* GPIO_P261 J1B-261 */
-		interrupts = <GPIO_NO(EDM1_EXT_GPIO_P261) 0>;
-		reset-gpios = <&EDM1_EXT_GPIO_P264 GPIO_ACTIVE_LOW>; /* GPIO_P264 J1B-264 */
-		touchscreen-size-x = <800>;
-		touchscreen-size-y = <480>;
+	egalax: egalax_i2c@2a {
+		compatible = "eeti,egalax_i2c";
+		reg = <0x2a>;
+		interrupt-parent = <&GPIO_BANK(EDM_EXT_GPIO_P259)>;
+		interrupts = <GPIO_NO(EDM_EXT_GPIO_P259) 8>;
+		int-gpios = <&EDM_EXT_GPIO_P259 GPIO_ACTIVE_LOW>;
 	};
 };
 
-&i2c3 {
+&EDM_I2CC {
 	status = "okay";
 
 	mag3110@0e {
@@ -144,32 +153,24 @@
 	};
 };
 
-&can1 {
+&EDM_CANA {
 	status = "okay";
 };
 
-&can2 {
+&EDM_CANB {
 	status = "okay";
 };
 
-&spdif {
-	status = "okay";
-};
-
-&ecspi1 {
+&EDM_SPIB {
 	status = "okay";
 
 	ads7846@0 {
 		reg = <0>;  /* CS0 */
 		compatible = "ti,ads7846";
-#ifdef EDM1_EXT_ADS7846_IOMUX_FAIRY
-		pinctrl-names = "default";
-		pinctrl-0 = <EDM1_EXT_ADS7846_IOMUX_FAIRY>;
-#endif
-		interrupt-parent = <&GPIO_BANK(EDM1_EXT_GPIO_P263)>; /* GPIO_P263 J1B-263 */
-		interrupts = <GPIO_NO(EDM1_EXT_GPIO_P263) 0>;
+		interrupt-parent = <&GPIO_BANK(EDM_EXT_GPIO_P263)>;
+		interrupts = <GPIO_NO(EDM_EXT_GPIO_P263) 0>;
 		spi-max-frequency = <1000000>;
-		pendown-gpio = <&EDM1_EXT_GPIO_P263 0>; /* GPIO_P263 J1B-263 */
+		pendown-gpio = <&EDM_EXT_GPIO_P263 0>;
 		vcc-supply = <&reg_3p3v>;
 
 		ti,x-min = /bits/ 16 <0>;
@@ -187,3 +188,13 @@
 		linux,wakeup;
 	};
 };
+
+#ifdef EDM_PCIEA
+&EDM_PCIEA {
+        #ifdef EDM_PCIEA_RESET_GPIO
+	reset-gpio = <&EDM_PCIEA_RESET_GPIO GPIO_ACTIVE_HIGH>;
+        #endif
+	status = "okay";
+};
+#endif
+

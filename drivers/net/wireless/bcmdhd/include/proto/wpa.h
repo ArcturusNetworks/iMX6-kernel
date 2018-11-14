@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wpa.h 384536 2013-02-12 04:13:09Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: wpa.h 518342 2014-12-01 23:21:41Z $
  */
 
 #ifndef _proto_wpa_h_
@@ -69,6 +72,8 @@ typedef BWL_PRE_PACKED_STRUCT struct
 #define WPA_IE_FIXED_LEN	8
 #define WPA_IE_TAG_FIXED_LEN	6
 
+#define BIP_OUI_TYPE WPA2_OUI "\x06"
+
 typedef BWL_PRE_PACKED_STRUCT struct {
 	uint8 tag;	/* TAG */
 	uint8 length;	/* TAG length */
@@ -80,6 +85,8 @@ typedef BWL_PRE_PACKED_STRUCT struct {
 #define WPA_RSN_IE_FIXED_LEN	4
 #define WPA_RSN_IE_TAG_FIXED_LEN	2
 typedef uint8 wpa_pmkid_t[WPA2_PMKID_LEN];
+
+#define WFA_OSEN_IE_FIXED_LEN	6
 
 /* WPA suite/multicast suite */
 typedef BWL_PRE_PACKED_STRUCT struct

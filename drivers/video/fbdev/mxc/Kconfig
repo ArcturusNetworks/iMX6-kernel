@@ -14,9 +14,27 @@ config FB_MXC
 	  If you plan to use the LCD display with your MXC system, say
 	  Y here.
 
+config FB_MXC_DISP_FRAMEWORK
+	tristate "Display driver framework"
+	help
+	  This is a framework that helps with registration and data handling
+	  between fb drivers and display drivers.
+
+	  It is selected by drivers which use this framework as linkage code
+	  between display controllers and panels.
+
 config FB_MXC_SYNC_PANEL
-	depends on FB_MXC
+	depends on FB_MXC && !FB_IMX64
+	depends on MXC_IPU_V3
+	select FB_MXC_DISP_FRAMEWORK
 	tristate "Synchronous Panel Framebuffer"
+
+config FB_MXC_OVERLAY
+	depends on FB_MXC
+	tristate "Overlay Framebuffer"
+	default n
+	help
+	  Enhanced LCD controller of MXC has overlay function.
 
 config FB_MXC_MIPI_DSI
 	tristate "MXC MIPI_DSI"
@@ -28,10 +46,25 @@ config FB_MXC_MIPI_DSI_SAMSUNG
 	depends on FB_MXC_SYNC_PANEL
 	depends on FB_MXS
 
+config FB_MXC_MIPI_DSI_NORTHWEST
+	tristate "MXC MIPI_DSI_NORTHWEST"
+	depends on FB_MXC_DISP_FRAMEWORK || FB_MXC_SYNC_PANEL
+	depends on FB_MXS
+
 config FB_MXC_TRULY_WVGA_SYNC_PANEL
 	tristate "TRULY WVGA Panel"
-	depends on FB_MXC_SYNC_PANEL
-	depends on FB_MXC_MIPI_DSI || FB_MXC_MIPI_DSI_SAMSUNG
+	depends on FB_MXC_DISP_FRAMEWORK || FB_MXC_SYNC_PANEL
+	depends on FB_MXC_MIPI_DSI || FB_MXC_MIPI_DSI_SAMSUNG || FB_MXC_MIPI_DSI_NORTHWEST
+
+config FB_MXC_TRULY_PANEL_TFT3P5079E
+	tristate "TRULY Panel TFT3P5079E"
+	depends on FB_MXC_DISP_FRAMEWORK || FB_MXC_SYNC_PANEL
+	depends on FB_MXC_MIPI_DSI_SAMSUNG
+
+config FB_MXC_TRULY_PANEL_TFT3P5581E
+	tristate "TRULY Panel TFT3P5581E"
+	depends on FB_MXC_DISP_FRAMEWORK || FB_MXC_SYNC_PANEL
+	depends on FB_MXC_MIPI_DSI_SAMSUNG || FB_MXC_MIPI_DSI_NORTHWEST
 
 config FB_MXC_LDB
 	tristate "MXC LDB"
@@ -63,6 +96,13 @@ config FB_MXC_DCIC
 	depends on MXC_IPU_V3 || FB_MXS
 	select VIDEOMODE_HELPERS
 
+config FB_MXC_ADV7535
+	tristate "ADI ADV7535 support"
+	depends on I2C
+	depends on FB_MXC_MIPI_DSI || FB_MXC_MIPI_DSI_NORTHWEST
+	help
+	  Driver support for the ADV7535 DSI-to-HDMI module
+
 config HANNSTAR_CABC
 	tristate "Hannstar CABC function"
 	help
@@ -86,3 +126,11 @@ config FB_MXC_EINK_V2_PANEL
 config FB_MXC_EINK_AUTO_UPDATE_MODE
 	bool "E-Ink Auto-update Mode Support"
 	depends on FB_MXC_EINK_PANEL
+
+config FB_DCSS
+	tristate "DCSS multi-layer framebuffer support"
+	depends on FB_MXC && ARCH_FSL_IMX8MQ
+	default y
+	help
+	  Framebuffer support the DCSS controller in imx8mq platform.
+	  DCSS support 3 layer compsition.

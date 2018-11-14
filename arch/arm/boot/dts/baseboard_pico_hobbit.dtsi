@@ -1,9 +1,8 @@
 /*
- * Copyright 2016 Technexion Ltd.
+ * Copyright 2018 Technexion Ltd.
  *
- * Author: Wig Cheng <wig.cheng@technexion.com>
- *	   Richard Hu <richard.hu@technexion.com>
- *	   Tapani Utriainen <tapani@technexion.com>
+ * Author: Tapani Utriainen <tapani@technexion.com>
+ *         Richard Hu <richard.hu@technexion.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -13,38 +12,42 @@
 
 #include <tnmacro.h>
 
+/*
+ * Difference between hobbit baseboard FL and GL version
+ *
+ *			  FL                GL
+ * ethernet PHY       10_100m LAN        Giga LAN
+ * ethernet Reset     PICO_PIN_P42       PICO_PIN_P37
+ */
+
 / {
 	gpio-edm {
 		compatible = "gpio-edm";
-/* custom GPIO may be from GPIO expander on CPU module */
-#ifdef PICO_EXT_GPIO_IOMUX_HOBBIT
-		pinctrl-names = "default";
-		pinctrl-0 = <PICO_EXT_GPIO_IOMUX_HOBBIT>;
-#endif
+
 		gpio_p24 {
 			label = "GPIO_P24";
-			gpios = <&PICO_EXT_GPIO_P24 1>;
-			dir   = "in";
+			gpios = <&PICO_EXT_GPIO_P24 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
 		gpio_p26 {
 			label = "GPIO_P26";
-			gpios = <&PICO_EXT_GPIO_P26 1>;
-			dir   = "in";
+			gpios = <&PICO_EXT_GPIO_P26 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
 		gpio_p28 {
 			label = "GPIO_P28";
-			gpios = <&PICO_EXT_GPIO_P28 1>;
-			dir   = "in";
+			gpios = <&PICO_EXT_GPIO_P28 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
 		gpio_p30 {
 			label = "GPIO_P30";
-			gpios = <&PICO_EXT_GPIO_P30 1>;
-			dir   = "in";
+			gpios = <&PICO_EXT_GPIO_P30 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
 		gpio_p34 {
 			label = "GPIO_P34";
-			gpios = <&PICO_EXT_GPIO_P34 1>;
-			dir   = "in";
+			gpios = <&PICO_EXT_GPIO_P34 GPIO_ACTIVE_HIGH>;
+			dir   = "out";
 		};
 	};
 
@@ -52,86 +55,86 @@
 		compatible = "fsl,imx-sgtl5000",
 			     "fsl,imx-audio-sgtl5000";
 		model = "audio-sgtl5000";
-		ssi-controller = <&PICO_AUD_I2S_CHANNEL>;
+		ssi-controller = <&PICO_AUDA_I2S_CHANNEL>;
 		audio-codec = <&codec>;
 		audio-routing =
 			"MIC_IN", "Mic Jack",
 			"Mic Jack", "Mic Bias",
 			"Headphone Jack", "HP_OUT";
-		mux-int-port = <PICO_AUD_MUX_INT>;
-		mux-ext-port = <PICO_AUD_MUX_EXT>;
+#if defined(PICO_AUDA_MUX_INT) && defined(PICO_AUDA_MUX_EXT)
+		mux-int-port = <PICO_AUDA_MUX_INT>;
+		mux-ext-port = <PICO_AUDA_MUX_EXT>;
+#else
+		fsl,no-audmux = "true";
+#endif
+
+
+	};
+
+	gpio-leds {
+		compatible = "gpio-leds";
+
+		led {
+			label = "gpio-led";
+			gpios = <&PICO_EXT_GPIO_P44 GPIO_ACTIVE_HIGH>; /* PICO_P44 */
+		};
+	};
+
+	clocks {
+		codec_osc: aud_mclk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <24576000>;
+		};
 	};
 };
 
-&i2c1 {
+&PICO_I2CA {
 	status = "okay";
+
 	codec: sgtl5000@0a {
 		compatible = "fsl,sgtl5000";
 		reg = <0x0a>;
-		clocks = <&PICO_AUD_CLK_SRC>;
+		clocks = <&codec_osc>;
 		VDDA-supply = <&reg_2p5v>;
 		VDDIO-supply = <&reg_3p3v>;
 	};
 };
 
-&i2c2 {
+&PICO_I2CB {
 	status = "okay";
 
-	ov5640_mipi: ov5640_mipi@3c {
-		compatible = "ovti,ov564x_mipi";
-		reg = <0x3c>;
-		clocks = <&clks 200>;
-		clock-names = "csi_mclk";
-		DOVDD-supply = <&reg_1p8v>;
-		AVDD-supply = <&reg_2p5v>;
-		DVDD-supply = <&reg_1p8v>;
-		pwn-gpios = <&gpio1 6 1>;
-		rst-gpios = <&gpio1 8 0>;
-		ipu_id = <0>;
-		csi_id = <0>;
-		mclk = <24000000>;
-		mclk_source = <0>;
+	adc: adc081c {
+		compatible = "ti,adc081c";
+		reg = <0x50>;
+		vref-supply = <&reg_3p3v>;
 	};
 
 	polytouch: edt-ft5x06@38 {
 		compatible = "edt,edt-ft5x06";
 		reg = <0x38>;
-		pinctrl-names = "default";
-		pinctrl-0 = <PICO_EXT_FT5X06_IOMUX_HOBBIT>; /* Touch IRQ and Touch Reset */
-		interrupt-parent = <&GPIO_BANK(PICO_EXT_GPIO_P25)>; /* GPIO_P42 */
+		interrupt-parent = <&GPIO_BANK(PICO_EXT_GPIO_P25)>; /* PICO_P25 */
 		interrupts = <GPIO_NO(PICO_EXT_GPIO_P25) 0>;
-		reset-gpios = <&PICO_EXT_GPIO_P32 GPIO_ACTIVE_LOW>; /* GPIO_P32 */
+		reset-gpios = <&PICO_EXT_GPIO_P32 GPIO_ACTIVE_LOW>; /* PICO_P32 */
 		touchscreen-size-x = <800>;
 		touchscreen-size-y = <480>;
 	};
 };
 
-&i2c3 {
+&PICO_I2CC {
 	status = "okay";
 };
 
-&can1 {
-	status = "okay";
-};
-
-&can2 {
-	status = "okay";
-};
-
-&ecspi2 {
+&PICO_SPIA {
 	status = "okay";
 
 	ads7846@0 {
 		reg = <0>;  /* CS0 */
 		compatible = "ti,ads7846";
-#ifdef PICO_EXT_ADS7846_IOMUX_HOBBIT
-		pinctrl-names = "default";
-		pinctrl-0 = <PICO_EXT_ADS7846_IOMUX_HOBBIT>;
-#endif
-		interrupt-parent = <&GPIO_BANK(PICO_EXT_GPIO_P48)>; /* GPIO_P263 J1B-263 */
+		interrupt-parent = <&GPIO_BANK(PICO_EXT_GPIO_P48)>; /* PICO_P48 */
 		interrupts = <GPIO_NO(PICO_EXT_GPIO_P48) 0>;
 		spi-max-frequency = <1000000>;
-		pendown-gpio = <&PICO_EXT_GPIO_P48 0>; /* GPIO_P263 J1B-263 */
+		pendown-gpio = <&PICO_EXT_GPIO_P48 0>; /* PICO_P48 */
 		vcc-supply = <&reg_3p3v>;
 
 		ti,x-min = /bits/ 16 <0>;

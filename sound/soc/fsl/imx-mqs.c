@@ -1,5 +1,5 @@
 /*
- * Copyright 2012, 2014-2015 Freescale Semiconductor, Inc.
+ * Copyright 2012, 2014-2016 Freescale Semiconductor, Inc.
  * Copyright 2012 Linaro Ltd.
  *
  * The code contained herein is licensed under the GNU General Public
@@ -20,6 +20,7 @@
 #define SUPPORT_RATE_NUM    10
 
 struct imx_priv {
+	struct clk *codec_clk;
 	unsigned int mclk_freq;
 	struct platform_device *pdev;
 	struct platform_device *asrc_pdev;
@@ -38,7 +39,9 @@ static int imx_mqs_startup(struct snd_pcm_substream *substream)
 	static u32 support_rates[SUPPORT_RATE_NUM];
 	int ret;
 
-	if (priv->mclk_freq == 24576000) {
+	priv->mclk_freq = clk_get_rate(priv->codec_clk);
+
+	if (priv->mclk_freq % 24576000 == 0) {
 		support_rates[0] = 48000;
 		constraint_rates.list = support_rates;
 		constraint_rates.count = 1;
@@ -119,7 +122,8 @@ static struct snd_soc_dai_link imx_mqs_dai[] = {
 		.dynamic = 1,
 		.ignore_pmdown_time = 1,
 		.dpcm_playback = 1,
-		.dpcm_capture = 1,
+		.dpcm_capture = 0,
+		.dpcm_merged_chan = 1,
 	},
 	{
 		.name = "HiFi-ASRC-BE",
@@ -131,7 +135,7 @@ static struct snd_soc_dai_link imx_mqs_dai[] = {
 		.no_pcm = 1,
 		.ignore_pmdown_time = 1,
 		.dpcm_playback = 1,
-		.dpcm_capture = 1,
+		.dpcm_capture = 0,
 		.ops = &imx_mqs_ops_be,
 		.be_hw_params_fixup = be_hw_params_fixup,
 	},
@@ -149,7 +153,6 @@ static int imx_mqs_probe(struct platform_device *pdev)
 {
 	struct device_node *cpu_np, *codec_np;
 	struct imx_priv *priv = &card_priv;
-	struct clk *codec_clk = NULL;
 	struct platform_device *codec_dev;
 	struct platform_device *asrc_pdev = NULL;
 	struct platform_device *cpu_pdev;
@@ -192,13 +195,12 @@ static int imx_mqs_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
-	codec_clk = devm_clk_get(&codec_dev->dev, NULL);
-	if (IS_ERR(codec_clk)) {
-		ret = PTR_ERR(codec_clk);
+	priv->codec_clk = devm_clk_get(&codec_dev->dev, "mclk");
+	if (IS_ERR(priv->codec_clk)) {
+		ret = PTR_ERR(priv->codec_clk);
 		dev_err(&codec_dev->dev, "failed to get codec clk: %d\n", ret);
 		goto fail;
 	}
-	priv->mclk_freq = clk_get_rate(codec_clk);
 
 	imx_mqs_dai[0].codec_dai_name = "fsl-mqs-dai";
 

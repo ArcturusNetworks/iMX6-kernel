@@ -72,7 +72,7 @@ static struct bus_type snd_seq_bus_type = {
 /*
  * proc interface -- just for compatibility
  */
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_SND_PROC_FS
 static struct snd_info_entry *info_entry;
 
 static int print_dev_info(struct device *dev, void *data)
@@ -148,8 +148,10 @@ void snd_seq_device_load_drivers(void)
 	flush_work(&autoload_work);
 }
 EXPORT_SYMBOL(snd_seq_device_load_drivers);
+#define cancel_autoload_drivers()	cancel_work_sync(&autoload_work)
 #else
 #define queue_autoload_drivers() /* NOP */
+#define cancel_autoload_drivers() /* NOP */
 #endif
 
 /*
@@ -159,6 +161,7 @@ static int snd_seq_device_dev_free(struct snd_device *device)
 {
 	struct snd_seq_device *dev = device->device_data;
 
+	cancel_autoload_drivers();
 	put_device(&dev->dev);
 	return 0;
 }
@@ -272,7 +275,7 @@ EXPORT_SYMBOL_GPL(snd_seq_driver_unregister);
 
 static int __init seq_dev_proc_init(void)
 {
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_SND_PROC_FS
 	info_entry = snd_info_create_module_entry(THIS_MODULE, "drivers",
 						  snd_seq_root);
 	if (info_entry == NULL)
@@ -305,7 +308,7 @@ static void __exit alsa_seq_device_exit(void)
 #ifdef CONFIG_MODULES
 	cancel_work_sync(&autoload_work);
 #endif
-#ifdef CONFIG_PROC_FS
+#ifdef CONFIG_SND_PROC_FS
 	snd_info_free_entry(info_entry);
 #endif
 	bus_unregister(&snd_seq_bus_type);

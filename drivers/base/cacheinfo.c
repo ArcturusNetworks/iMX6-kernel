@@ -16,6 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include <linux/acpi.h>
 #include <linux/bitops.h>
 #include <linux/cacheinfo.h>
 #include <linux/compiler.h>
@@ -104,9 +105,16 @@ static int cache_shared_cpu_map_setup(unsigned int cpu)
 	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
 	struct cacheinfo *this_leaf, *sib_leaf;
 	unsigned int index;
-	int ret;
+	int ret = 0;
 
-	ret = cache_setup_of_node(cpu);
+	if (this_cpu_ci->cpu_map_populated)
+		return 0;
+
+	if (of_have_populated_dt())
+		ret = cache_setup_of_node(cpu);
+	else if (!acpi_disabled)
+		/* No cache property/hierarchy support yet in ACPI */
+		ret = -ENOTSUPP;
 	if (ret)
 		return ret;
 
@@ -198,13 +206,12 @@ static int detect_cache_attributes(unsigned int cpu)
 	if (ret)
 		goto free_ci;
 	/*
-	 * For systems using DT for cache hierarcy, of_node and shared_cpu_map
+	 * For systems using DT for cache hierarchy, of_node and shared_cpu_map
 	 * will be set up here only if they are not populated already
 	 */
 	ret = cache_shared_cpu_map_setup(cpu);
 	if (ret) {
-		pr_warn("Unable to detect cache hierarcy from DT for CPU %d\n",
-			cpu);
+		pr_warn("Unable to detect cache hierarchy for CPU %d\n", cpu);
 		goto free_ci;
 	}
 	return 0;

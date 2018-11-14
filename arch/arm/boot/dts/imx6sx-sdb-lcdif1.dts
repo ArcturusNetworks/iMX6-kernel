@@ -9,12 +9,6 @@
 #include "imx6sx-sdb.dts"
 
 / {
-	regulators {
-		reg_lcd_3v3: regulator@4 {
-			status = "okay";
-		};
-	};
-
 	sii902x_reset: sii902x-reset {
 		status = "okay";
 	};
@@ -32,4 +26,12 @@
 	sii902x@39 {
 		status = "okay";
 	};
+};
+
+&ov5640 {
+	status = "disabled";
+};
+
+&crypto {
+	status = "disabled";
 };

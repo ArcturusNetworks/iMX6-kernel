@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2015-2016 Freescale Semiconductor, Inc.
+ * Copyright (C) 2017 NXP
  *
  * derived from the omap-rpmsg implementation.
  * Remote processor messaging transport - tty driver
@@ -21,6 +22,10 @@
 #include <linux/tty_flip.h>
 #include <linux/virtio.h>
 
+/* this needs to be less then (RPMSG_BUF_SIZE - sizeof(struct rpmsg_hdr)) */
+#define RPMSG_MAX_SIZE		256
+#define MSG		"hello world!"
+
 /*
  * struct rpmsgtty_port - Wrapper struct for imx rpmsg tty port.
  * @port:		TTY port data
@@ -28,24 +33,20 @@
 struct rpmsgtty_port {
 	struct tty_port		port;
 	spinlock_t		rx_lock;
-	struct rpmsg_channel	*rpdev;
+	struct rpmsg_device	*rpdev;
+	struct tty_driver	*rpmsgtty_driver;
 };
 
-static struct rpmsgtty_port rpmsg_tty_port;
-
-#define RPMSG_MAX_SIZE		(512 - sizeof(struct rpmsg_hdr))
-#define MSG		"hello world!"
-
-static void rpmsg_tty_cb(struct rpmsg_channel *rpdev, void *data, int len,
+static int rpmsg_tty_cb(struct rpmsg_device *rpdev, void *data, int len,
 						void *priv, u32 src)
 {
 	int space;
 	unsigned char *cbuf;
-	struct rpmsgtty_port *cport = &rpmsg_tty_port;
+	struct rpmsgtty_port *cport = dev_get_drvdata(&rpdev->dev);
 
 	/* flush the recv-ed none-zero data to tty node */
 	if (len == 0)
-		return;
+		return 0;
 
 	dev_dbg(&rpdev->dev, "msg(<- src 0x%x) len %d\n", src, len);
 
@@ -57,19 +58,23 @@ static void rpmsg_tty_cb(struct rpmsg_channel *rpdev, void *data, int len,
 	if (space <= 0) {
 		dev_err(&rpdev->dev, "No memory for tty_prepare_flip_string\n");
 		spin_unlock_bh(&cport->rx_lock);
-		return;
+		return -ENOMEM;
 	}
 
 	memcpy(cbuf, data, len);
 	tty_flip_buffer_push(&cport->port);
 	spin_unlock_bh(&cport->rx_lock);
+
+	return 0;
 }
 
 static struct tty_port_operations  rpmsgtty_port_ops = { };
 
 static int rpmsgtty_install(struct tty_driver *driver, struct tty_struct *tty)
 {
-	return tty_port_install(&rpmsg_tty_port.port, driver, tty);
+	struct rpmsgtty_port *cport = driver->driver_state;
+
+	return tty_port_install(&cport->port, driver, tty);
 }
 
 static int rpmsgtty_open(struct tty_struct *tty, struct file *filp)
@@ -89,7 +94,7 @@ static int rpmsgtty_write(struct tty_struct *tty, const unsigned char *buf,
 	const unsigned char *tbuf;
 	struct rpmsgtty_port *rptty_port = container_of(tty->port,
 			struct rpmsgtty_port, port);
-	struct rpmsg_channel *rpdev = rptty_port->rpdev;
+	struct rpmsg_device *rpdev = rptty_port->rpdev;
 
 	if (NULL == buf) {
 		pr_err("buf shouldn't be null.\n");
@@ -100,7 +105,7 @@ static int rpmsgtty_write(struct tty_struct *tty, const unsigned char *buf,
 	tbuf = buf;
 	do {
 		/* send a message to our remote processor */
-		ret = rpmsg_send(rpdev, (void *)tbuf,
+		ret = rpmsg_send(rpdev->ept, (void *)tbuf,
 			count > RPMSG_MAX_SIZE ? RPMSG_MAX_SIZE : count);
 		if (ret) {
 			dev_err(&rpdev->dev, "rpmsg_send failed: %d\n", ret);
@@ -132,34 +137,31 @@ static const struct tty_operations imxrpmsgtty_ops = {
 	.write_room		= rpmsgtty_write_room,
 };
 
-static struct tty_driver *rpmsgtty_driver;
-
-static int rpmsg_tty_probe(struct rpmsg_channel *rpdev)
+static int rpmsg_tty_probe(struct rpmsg_device *rpdev)
 {
-	int err;
-	struct rpmsgtty_port *cport = &rpmsg_tty_port;
+	int ret;
+	char name[80];
+	struct rpmsgtty_port *cport;
+	struct tty_driver *rpmsgtty_driver;
 
 	dev_info(&rpdev->dev, "new channel: 0x%x -> 0x%x!\n",
 			rpdev->src, rpdev->dst);
 
-	/*
-	 * send a message to our remote processor, and tell remote
-	 * processor about this channel
-	 */
-	err = rpmsg_send(rpdev, MSG, strlen(MSG));
-	if (err) {
-		dev_err(&rpdev->dev, "rpmsg_send failed: %d\n", err);
-		return err;
-	}
+	cport = devm_kzalloc(&rpdev->dev, sizeof(*cport), GFP_KERNEL);
+	if (!cport)
+		return -ENOMEM;
 
 	rpmsgtty_driver = tty_alloc_driver(1, TTY_DRIVER_UNNUMBERED_NODE);
-	if (IS_ERR(rpmsgtty_driver))
+	if (IS_ERR(rpmsgtty_driver)) {
+		kfree(cport);
 		return PTR_ERR(rpmsgtty_driver);
+	}
 
 	rpmsgtty_driver->driver_name = "rpmsg_tty";
-	rpmsgtty_driver->name = "ttyRPMSG";
-	rpmsgtty_driver->major = TTYAUX_MAJOR;
-	rpmsgtty_driver->minor_start = 3;
+	sprintf(name, "ttyRPMSG%d", rpdev->dst);
+	rpmsgtty_driver->name = name;
+	rpmsgtty_driver->major = UNNAMED_MAJOR;
+	rpmsgtty_driver->minor_start = 0;
 	rpmsgtty_driver->type = TTY_DRIVER_TYPE_CONSOLE;
 	rpmsgtty_driver->init_termios = tty_std_termios;
 
@@ -169,40 +171,58 @@ static int rpmsg_tty_probe(struct rpmsg_channel *rpdev)
 	cport->port.ops = &rpmsgtty_port_ops;
 	spin_lock_init(&cport->rx_lock);
 	cport->port.low_latency = cport->port.flags | ASYNC_LOW_LATENCY;
-
-	err = tty_register_driver(rpmsgtty_driver);
-	if (err < 0) {
-		pr_err("Couldn't install rpmsg tty driver: err %d\n", err);
-		goto error;
-	} else
-		pr_info("Install rpmsg tty driver!\n");
 	cport->rpdev = rpdev;
+	dev_set_drvdata(&rpdev->dev, cport);
+	rpmsgtty_driver->driver_state = cport;
+	cport->rpmsgtty_driver = rpmsgtty_driver;
+
+	ret = tty_register_driver(cport->rpmsgtty_driver);
+	if (ret < 0) {
+		pr_err("Couldn't install rpmsg tty driver: ret %d\n", ret);
+		goto error1;
+	} else {
+		pr_info("Install rpmsg tty driver!\n");
+	}
+
+	/*
+	 * send a message to our remote processor, and tell remote
+	 * processor about this channel
+	 */
+	ret = rpmsg_send(rpdev->ept, MSG, strlen(MSG));
+	if (ret) {
+		dev_err(&rpdev->dev, "rpmsg_send failed: %d\n", ret);
+		goto error;
+	}
 
 	return 0;
 
 error:
-	tty_unregister_driver(rpmsgtty_driver);
-	put_tty_driver(rpmsgtty_driver);
+	tty_unregister_driver(cport->rpmsgtty_driver);
+error1:
+	put_tty_driver(cport->rpmsgtty_driver);
 	tty_port_destroy(&cport->port);
-	rpmsgtty_driver = NULL;
+	cport->rpmsgtty_driver = NULL;
+	kfree(cport);
 
-	return err;
+	return ret;
 }
 
-static void rpmsg_tty_remove(struct rpmsg_channel *rpdev)
+static void rpmsg_tty_remove(struct rpmsg_device *rpdev)
 {
-	struct rpmsgtty_port *cport = &rpmsg_tty_port;
+	struct rpmsgtty_port *cport = dev_get_drvdata(&rpdev->dev);
 
 	dev_info(&rpdev->dev, "rpmsg tty driver is removed\n");
 
-	tty_unregister_driver(rpmsgtty_driver);
-	put_tty_driver(rpmsgtty_driver);
+	tty_unregister_driver(cport->rpmsgtty_driver);
+	put_tty_driver(cport->rpmsgtty_driver);
 	tty_port_destroy(&cport->port);
-	rpmsgtty_driver = NULL;
+	cport->rpmsgtty_driver = NULL;
 }
 
 static struct rpmsg_device_id rpmsg_driver_tty_id_table[] = {
-	{ .name	= "rpmsg-openamp-demo-channel" },
+	{ .name	= "rpmsg-virtual-tty-channel-1" },
+	{ .name	= "rpmsg-virtual-tty-channel" },
+	{ .name = "rpmsg-openamp-demo-channel" },
 	{ },
 };
 MODULE_DEVICE_TABLE(rpmsg, rpmsg_driver_tty_id_table);
