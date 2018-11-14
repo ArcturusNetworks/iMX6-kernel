@@ -7,7 +7,8 @@
 #include <linux/linkage.h>
 #include <asm/ptrace.h>
 #include <asm/ftrace.h>
-
+#include <asm/export.h>
+#include <asm/nospec-branch.h>
 
 	.code64
 	.section .entry.text, "ax"
@@ -17,8 +18,10 @@
 
 #ifdef CC_USING_FENTRY
 # define function_hook	__fentry__
+EXPORT_SYMBOL(__fentry__)
 #else
 # define function_hook	mcount
+EXPORT_SYMBOL(mcount)
 #endif
 
 /* All cases save the original rbp (8 bytes) */
@@ -168,19 +171,22 @@ GLOBAL(ftrace_call)
 	restore_mcount_regs
 
 	/*
-	 * The copied trampoline must call ftrace_return as it
+	 * The copied trampoline must call ftrace_epilogue as it
 	 * still may need to call the function graph tracer.
+	 *
+	 * The code up to this label is copied into trampolines so
+	 * think twice before adding any new code or changing the
+	 * layout here.
 	 */
-GLOBAL(ftrace_caller_end)
-
-GLOBAL(ftrace_return)
+GLOBAL(ftrace_epilogue)
 
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 GLOBAL(ftrace_graph_call)
 	jmp ftrace_stub
 #endif
 
-GLOBAL(ftrace_stub)
+/* This is weak to keep gas from relaxing the jumps */
+WEAK(ftrace_stub)
 	retq
 END(ftrace_caller)
 
@@ -244,14 +250,14 @@ GLOBAL(ftrace_regs_call)
 	popfq
 
 	/*
-	 * As this jmp to ftrace_return can be a short jump
+	 * As this jmp to ftrace_epilogue can be a short jump
 	 * it must not be copied into the trampoline.
 	 * The trampoline will add the code to jump
 	 * to the return.
 	 */
 GLOBAL(ftrace_regs_caller_end)
 
-	jmp ftrace_return
+	jmp ftrace_epilogue
 
 END(ftrace_regs_caller)
 
@@ -278,8 +284,15 @@ trace:
 	/* save_mcount_regs fills in first two parameters */
 	save_mcount_regs
 
-	call   *ftrace_trace_function
+	/*
+	 * When DYNAMIC_FTRACE is not defined, ARCH_SUPPORTS_FTRACE_OPS is not
+	 * set (see include/asm/ftrace.h and include/linux/ftrace.h).  Only the
+	 * ip and parent ip are used and the list function is called when
+	 * function tracing is enabled.
+	 */
 
+	movq ftrace_trace_function, %r8
+	CALL_NOSPEC %r8
 	restore_mcount_regs
 
 	jmp fgraph_trace
@@ -322,5 +335,5 @@ GLOBAL(return_to_handler)
 	movq 8(%rsp), %rdx
 	movq (%rsp), %rax
 	addq $24, %rsp
-	jmp *%rdi
+	JMP_NOSPEC %rdi
 #endif

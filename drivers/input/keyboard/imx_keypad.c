@@ -1,12 +1,11 @@
 /*
  * Driver for the IMX keypad port.
  * Copyright (C) 2009 Alberto Panizzo <maramaopercheseimorto@gmail.com>
+ * Copyright (C) 2015 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- *
- * <<Power management needs to be implemented>>.
  */
 
 #include <linux/clk.h>
@@ -269,6 +268,7 @@ static void imx_keypad_check_for_events(unsigned long data)
 		reg_val |= KBD_STAT_KDIE;
 		reg_val &= ~KBD_STAT_KRIE;
 		writew(reg_val, keypad->mmio_base + KPSR);
+		pm_relax(keypad->input_dev->dev.parent);
 	} else {
 		/*
 		 * Some keys are still pressed. Schedule a rescan in
@@ -281,11 +281,6 @@ static void imx_keypad_check_for_events(unsigned long data)
 
 		reg_val = readw(keypad->mmio_base + KPSR);
 		reg_val |= KBD_STAT_KPKR | KBD_STAT_KRSS;
-		writew(reg_val, keypad->mmio_base + KPSR);
-
-		reg_val = readw(keypad->mmio_base + KPSR);
-		reg_val |= KBD_STAT_KRIE;
-		reg_val &= ~KBD_STAT_KDIE;
 		writew(reg_val, keypad->mmio_base + KPSR);
 	}
 }
@@ -304,6 +299,7 @@ static irqreturn_t imx_keypad_irq_handler(int irq, void *dev_id)
 	writew(reg_val, keypad->mmio_base + KPSR);
 
 	if (keypad->enabled) {
+		pm_stay_awake(keypad->input_dev->dev.parent);
 		/* The matrix is supposed to be changed */
 		keypad->stable_count = 0;
 
@@ -506,7 +502,9 @@ static int imx_keypad_probe(struct platform_device *pdev)
 	input_set_drvdata(input_dev, keypad);
 
 	/* Ensure that the keypad will stay dormant until opened */
-	clk_prepare_enable(keypad->clk);
+	error = clk_prepare_enable(keypad->clk);
+	if (error)
+		return error;
 	imx_keypad_inhibit(keypad);
 	clk_disable_unprepare(keypad->clk);
 
@@ -530,11 +528,12 @@ static int imx_keypad_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int __maybe_unused imx_kbd_suspend(struct device *dev)
+static int __maybe_unused imx_kbd_suspend_noirq(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct imx_keypad *kbd = platform_get_drvdata(pdev);
 	struct input_dev *input_dev = kbd->input_dev;
+	unsigned short reg_val = readw(kbd->mmio_base + KPSR);
 
 	/* imx kbd can wake up system even clock is disabled */
 	mutex_lock(&input_dev->mutex);
@@ -544,13 +543,20 @@ static int __maybe_unused imx_kbd_suspend(struct device *dev)
 
 	mutex_unlock(&input_dev->mutex);
 
-	if (device_may_wakeup(&pdev->dev))
+	if (device_may_wakeup(&pdev->dev)) {
+		if (reg_val & KBD_STAT_KPKD)
+			reg_val |= KBD_STAT_KRIE;
+		if (reg_val & KBD_STAT_KPKR)
+			reg_val |= KBD_STAT_KDIE;
+		writew(reg_val, kbd->mmio_base + KPSR);
+
 		enable_irq_wake(kbd->irq);
+	}
 
 	return 0;
 }
 
-static int __maybe_unused imx_kbd_resume(struct device *dev)
+static int __maybe_unused imx_kbd_resume_noirq(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct imx_keypad *kbd = platform_get_drvdata(pdev);
@@ -574,7 +580,10 @@ err_clk:
 	return ret;
 }
 
-static SIMPLE_DEV_PM_OPS(imx_kbd_pm_ops, imx_kbd_suspend, imx_kbd_resume);
+static const struct dev_pm_ops imx_kbd_pm_ops = {
+	.suspend_noirq = imx_kbd_suspend_noirq,
+	.resume_noirq = imx_kbd_resume_noirq,
+};
 
 static struct platform_driver imx_keypad_driver = {
 	.driver		= {

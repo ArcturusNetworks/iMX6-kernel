@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: ethernet.h 403353 2013-05-20 14:05:33Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: ethernet.h 518342 2014-12-01 23:21:41Z $
  */
 
 #ifndef _NET_ETHERNET_H_	/* use native BSD ethernet.h when available */
@@ -83,14 +86,10 @@
 #define	ETHER_TYPE_IPV6		0x86dd		/* IPv6 */
 #define	ETHER_TYPE_BRCM		0x886c		/* Broadcom Corp. */
 #define	ETHER_TYPE_802_1X	0x888e		/* 802.1x */
-#ifdef PLC
-#define	ETHER_TYPE_88E1		0x88e1		/* GIGLE */
-#define	ETHER_TYPE_8912		0x8912		/* GIGLE */
-#define ETHER_TYPE_GIGLED	0xffff		/* GIGLE */
-#endif /* PLC */
 #define	ETHER_TYPE_802_1X_PREAUTH 0x88c7	/* 802.1x preauthentication */
 #define ETHER_TYPE_WAI		0x88b4		/* WAI */
 #define ETHER_TYPE_89_0D	0x890d		/* 89-0d frame for TDLS */
+#define ETHER_TYPE_RRB		ETHER_TYPE_89_0D  /* RRB 802.11r 2008 */
 
 #define ETHER_TYPE_PPP_SES	0x8864		/* PPPoE Session */
 
@@ -181,6 +180,14 @@ do { \
 	((uint16 *)(d))[0] = ((uint16 *)(s))[0]; \
 } while (0)
 
+/* Copy 14B ethernet header: 32bit aligned source and destination. */
+#define ehcopy32(s, d) \
+do { \
+	((uint32 *)(d))[0] = ((const uint32 *)(s))[0]; \
+	((uint32 *)(d))[1] = ((const uint32 *)(s))[1]; \
+	((uint32 *)(d))[2] = ((const uint32 *)(s))[2]; \
+	((uint16 *)(d))[6] = ((const uint16 *)(s))[6]; \
+} while (0)
 
 
 static const struct ether_addr ether_bcast = {{255, 255, 255, 255, 255, 255}};

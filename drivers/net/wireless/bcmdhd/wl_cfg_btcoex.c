@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_cfg_btcoex.c 427707 2013-10-04 10:28:29Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: wl_cfg_btcoex.c 514727 2014-11-12 03:02:48Z $
  */
 
 #include <net/rtnetlink.h>

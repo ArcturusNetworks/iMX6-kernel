@@ -21,15 +21,16 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: osl.h 424562 2013-09-18 10:57:30Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: osl.h 526460 2015-01-14 08:25:24Z $
  */
 
 #ifndef _osl_h_
 #define _osl_h_
 
-/* osl handle type forward declaration */
-typedef struct osl_info osl_t;
-typedef struct osl_dmainfo osldma_t;
+#include <osl_decl.h>
 
 #define OSL_PKTTAG_SZ	32 /* Size of PktTag */
 
@@ -41,7 +42,12 @@ typedef unsigned int (*osl_rreg_fn_t)(void *ctx, volatile void *reg, unsigned in
 typedef void  (*osl_wreg_fn_t)(void *ctx, volatile void *reg, unsigned int val, unsigned int size);
 
 
+
+#if defined(WL_UNITTEST)
+#include <utest_osl.h>
+#else
 #include <linux_osl.h>
+#endif 
 
 #ifndef PKTDBG_TRACE
 #define PKTDBG_TRACE(osh, pkt, bit)	BCM_REFERENCE(osh)
@@ -69,6 +75,14 @@ typedef void  (*osl_wreg_fn_t)(void *ctx, volatile void *reg, unsigned int val, 
 #else
 #define OSL_SYSUPTIME_SUPPORT TRUE
 #endif /* OSL_SYSUPTIME */
+
+#ifndef OSL_SYS_HALT
+#define OSL_SYS_HALT()	do {} while (0)
+#endif
+
+#ifndef OSL_MEM_AVAIL
+#define OSL_MEM_AVAIL()	(0xffffffff)
+#endif
 
 #if !defined(PKTC) && !defined(PKTC_DONGLE)
 #define	PKTCGETATTR(skb)	(0)
@@ -113,8 +127,9 @@ do { \
 #define PKTSETFRAGTOTNUM(osh, lb, tot)	BCM_REFERENCE(osh)
 #define PKTFRAGTOTLEN(osh, lb)		(0)
 #define PKTSETFRAGTOTLEN(osh, lb, len)	BCM_REFERENCE(osh)
-#define PKTFRAGIFINDEX(osh, lb)		(0)
-#define PKTSETFRAGIFINDEX(osh, lb, idx)	BCM_REFERENCE(osh)
+#define PKTIFINDEX(osh, lb)		(0)
+#define PKTSETIFINDEX(osh, lb, idx)	BCM_REFERENCE(osh)
+#define	PKTGETLF(osh, len, send, lbuf_type)	(0)
 
 /* in rx path, reuse totlen as used len */
 #define PKTFRAGUSEDLEN(osh, lb)			(0)
@@ -133,10 +148,31 @@ do { \
 #define PKTRESETRXFRAG(osh, lb)		BCM_REFERENCE(osh)
 
 /* TX FRAG */
-#define PKTISTXFRAG(osh, lb)       	(0)
+#define PKTISTXFRAG(osh, lb)		(0)
 #define PKTSETTXFRAG(osh, lb)		BCM_REFERENCE(osh)
+
+/* Need Rx completion used for AMPDU reordering */
+#define PKTNEEDRXCPL(osh, lb)           (TRUE)
+#define PKTSETNORXCPL(osh, lb)          BCM_REFERENCE(osh)
+#define PKTRESETNORXCPL(osh, lb)        BCM_REFERENCE(osh)
 
 #define PKTISFRAG(osh, lb)		(0)
 #define PKTFRAGISCHAINED(osh, i)	(0)
+/* TRIM Tail bytes from lfrag */
+#define PKTFRAG_TRIM_TAILBYTES(osh, p, len, type)	PKTSETLEN(osh, p, PKTLEN(osh, p) - len)
+
+#ifdef BCM_SECURE_DMA
+#define SECURE_DMA_ENAB(osh) (1)
+#else
+
+#define SECURE_DMA_ENAB(osh) (0)
+#define	SECURE_DMA_MAP(osh, va, size, direction, p, dmah, pcma, offset) ((dmaaddr_t) {(0)})
+#define	SECURE_DMA_DD_MAP(osh, va, size, direction, p, dmah) 0
+#define	SECURE_DMA_MAP_TXMETA(osh, va, size, direction, p, dmah, pcma) ((dmaaddr_t) {(0)})
+#define	SECURE_DMA_UNMAP(osh, pa, size, direction, p, dmah, pcma, offset)
+#define	SECURE_DMA_UNMAP_ALL(osh, pcma)
+
+#endif
+
 
 #endif	/* _osl_h_ */

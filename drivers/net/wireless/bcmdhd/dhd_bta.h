@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_bta.h 291086 2011-10-21 01:17:24Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: dhd_bta.h 514727 2014-11-12 03:02:48Z $
  */
 #ifndef __dhd_bta_h__
 #define __dhd_bta_h__

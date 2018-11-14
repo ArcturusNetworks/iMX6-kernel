@@ -272,13 +272,20 @@ static int posix_get_tai(clockid_t which_clock, struct timespec *tp)
 	return 0;
 }
 
+static int posix_get_hrtimer_res(clockid_t which_clock, struct timespec *tp)
+{
+	tp->tv_sec = 0;
+	tp->tv_nsec = hrtimer_resolution;
+	return 0;
+}
+
 /*
  * Initialize everything, well, just everything in Posix clocks/timers ;)
  */
 static __init int init_posix_timers(void)
 {
 	struct k_clock clock_realtime = {
-		.clock_getres	= hrtimer_get_res,
+		.clock_getres	= posix_get_hrtimer_res,
 		.clock_get	= posix_clock_realtime_get,
 		.clock_set	= posix_clock_realtime_set,
 		.clock_adj	= posix_clock_realtime_adj,
@@ -290,7 +297,7 @@ static __init int init_posix_timers(void)
 		.timer_del	= common_timer_del,
 	};
 	struct k_clock clock_monotonic = {
-		.clock_getres	= hrtimer_get_res,
+		.clock_getres	= posix_get_hrtimer_res,
 		.clock_get	= posix_ktime_get_ts,
 		.nsleep		= common_nsleep,
 		.nsleep_restart	= hrtimer_nanosleep_restart,
@@ -300,7 +307,7 @@ static __init int init_posix_timers(void)
 		.timer_del	= common_timer_del,
 	};
 	struct k_clock clock_monotonic_raw = {
-		.clock_getres	= hrtimer_get_res,
+		.clock_getres	= posix_get_hrtimer_res,
 		.clock_get	= posix_get_monotonic_raw,
 	};
 	struct k_clock clock_realtime_coarse = {
@@ -312,7 +319,7 @@ static __init int init_posix_timers(void)
 		.clock_get	= posix_get_monotonic_coarse,
 	};
 	struct k_clock clock_tai = {
-		.clock_getres	= hrtimer_get_res,
+		.clock_getres	= posix_get_hrtimer_res,
 		.clock_get	= posix_get_tai,
 		.nsleep		= common_nsleep,
 		.nsleep_restart	= hrtimer_nanosleep_restart,
@@ -322,7 +329,7 @@ static __init int init_posix_timers(void)
 		.timer_del	= common_timer_del,
 	};
 	struct k_clock clock_boottime = {
-		.clock_getres	= hrtimer_get_res,
+		.clock_getres	= posix_get_hrtimer_res,
 		.clock_get	= posix_get_boottime,
 		.nsleep		= common_nsleep,
 		.nsleep_restart	= hrtimer_nanosleep_restart,
@@ -500,17 +507,22 @@ static struct pid *good_sigevent(sigevent_t * event)
 {
 	struct task_struct *rtn = current->group_leader;
 
-	if ((event->sigev_notify & SIGEV_THREAD_ID ) &&
-		(!(rtn = find_task_by_vpid(event->sigev_notify_thread_id)) ||
-		 !same_thread_group(rtn, current) ||
-		 (event->sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_SIGNAL))
+	switch (event->sigev_notify) {
+	case SIGEV_SIGNAL | SIGEV_THREAD_ID:
+		rtn = find_task_by_vpid(event->sigev_notify_thread_id);
+		if (!rtn || !same_thread_group(rtn, current))
+			return NULL;
+		/* FALLTHRU */
+	case SIGEV_SIGNAL:
+	case SIGEV_THREAD:
+		if (event->sigev_signo <= 0 || event->sigev_signo > SIGRTMAX)
+			return NULL;
+		/* FALLTHRU */
+	case SIGEV_NONE:
+		return task_pid(rtn);
+	default:
 		return NULL;
-
-	if (((event->sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_NONE) &&
-	    ((event->sigev_signo <= 0) || (event->sigev_signo > SIGRTMAX)))
-		return NULL;
-
-	return task_pid(rtn);
+	}
 }
 
 void posix_timers_register_clock(const clockid_t clock_id,
@@ -738,8 +750,7 @@ common_timer_get(struct k_itimer *timr, struct itimerspec *cur_setting)
 	/* interval timer ? */
 	if (iv.tv64)
 		cur_setting->it_interval = ktime_to_timespec(iv);
-	else if (!hrtimer_active(timer) &&
-		 (timr->it_sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_NONE)
+	else if (!hrtimer_active(timer) && timr->it_sigev_notify != SIGEV_NONE)
 		return;
 
 	now = timer->base->get_time();
@@ -750,17 +761,17 @@ common_timer_get(struct k_itimer *timr, struct itimerspec *cur_setting)
 	 * expiry is > now.
 	 */
 	if (iv.tv64 && (timr->it_requeue_pending & REQUEUE_PENDING ||
-	    (timr->it_sigev_notify & ~SIGEV_THREAD_ID) == SIGEV_NONE))
+			timr->it_sigev_notify == SIGEV_NONE))
 		timr->it_overrun += (unsigned int) hrtimer_forward(timer, now, iv);
 
-	remaining = ktime_sub(hrtimer_get_expires(timer), now);
+	remaining = __hrtimer_expires_remaining_adjusted(timer, now);
 	/* Return 0 only, when the timer is expired and not pending */
 	if (remaining.tv64 <= 0) {
 		/*
 		 * A single shot SIGEV_NONE timer must return 0, when
 		 * it is expired !
 		 */
-		if ((timr->it_sigev_notify & ~SIGEV_THREAD_ID) != SIGEV_NONE)
+		if (timr->it_sigev_notify != SIGEV_NONE)
 			cur_setting->it_value.tv_nsec = 1;
 	} else
 		cur_setting->it_value = ktime_to_timespec(remaining);
@@ -858,7 +869,7 @@ common_timer_set(struct k_itimer *timr, int flags,
 	timr->it.real.interval = timespec_to_ktime(new_setting->it_interval);
 
 	/* SIGEV_NONE timers are not queued ! See common_timer_get */
-	if (((timr->it_sigev_notify & ~SIGEV_THREAD_ID) == SIGEV_NONE)) {
+	if (timr->it_sigev_notify == SIGEV_NONE) {
 		/* Setup correct expiry time for relative timers */
 		if (mode == HRTIMER_MODE_REL) {
 			hrtimer_add_expires(timer, timer->base->get_time());

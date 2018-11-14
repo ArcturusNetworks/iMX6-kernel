@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2015-2016 Freescale Semiconductor, Inc.
  *
  * The code contained herein is licensed under the GNU General Public
  * License. You may obtain a copy of the GNU General Public License
@@ -115,7 +115,24 @@ static u32 gpcv2_saved_imrs_m4[IMR_NUM];
 static u32 gpcv2_mf_irqs[IMR_NUM];
 static u32 gpcv2_mf_request_on[IMR_NUM];
 static DEFINE_SPINLOCK(gpcv2_lock);
-static struct notifier_block nb_mipi, nb_pcie;
+static struct notifier_block nb_mipi, nb_pcie, nb_usb_hsic;
+
+void imx_gpcv2_add_m4_wake_up_irq(u32 hwirq, bool enable)
+{
+	unsigned int idx = hwirq / 32;
+	unsigned long flags;
+	u32 mask;
+
+	/* Sanity check for SPI irq */
+	if (hwirq < 32)
+		return;
+
+	mask = 1 << hwirq % 32;
+	spin_lock_irqsave(&gpcv2_lock, flags);
+	gpcv2_wake_irqs[idx] = enable ? gpcv2_wake_irqs[idx] | mask :
+		gpcv2_wake_irqs[idx] & ~mask;
+	spin_unlock_irqrestore(&gpcv2_lock, flags);
+}
 
 static int imx_gpcv2_irq_set_wake(struct irq_data *d, unsigned int on)
 {
@@ -655,7 +672,7 @@ static int imx_gpcv2_domain_xlate(struct irq_domain *domain,
 				unsigned long *out_hwirq,
 				unsigned int *out_type)
 {
-	if (domain->of_node != controller)
+	if (irq_domain_get_of_node(domain) != controller)
 		return -EINVAL;	/* Shouldn't happen, really... */
 	if (intsize != 3)
 		return -EINVAL;	/* Not GIC compliant */
@@ -671,17 +688,17 @@ static int imx_gpcv2_domain_alloc(struct irq_domain *domain,
 				  unsigned int irq,
 				  unsigned int nr_irqs, void *data)
 {
-	struct of_phandle_args *args = data;
-	struct of_phandle_args parent_args;
+	struct irq_fwspec *fwspec = data;
+	struct irq_fwspec parent_fwspec;
 	irq_hw_number_t hwirq;
 	int i;
 
-	if (args->args_count != 3)
+	if (fwspec->param_count != 3)
 		return -EINVAL;	/* Not GIC compliant */
-	if (args->args[0] != 0)
+	if (fwspec->param[0] != 0)
 		return -EINVAL;	/* No PPI should point to this domain */
 
-	hwirq = args->args[1];
+	hwirq = fwspec->param[1];
 	if (hwirq >= GPC_MAX_IRQS)
 		return -EINVAL;	/* Can't deal with this */
 
@@ -689,9 +706,14 @@ static int imx_gpcv2_domain_alloc(struct irq_domain *domain,
 		irq_domain_set_hwirq_and_chip(domain, irq + i, hwirq + i,
 					      &imx_gpcv2_chip, NULL);
 
-	parent_args = *args;
-	parent_args.np = domain->parent->of_node;
-	return irq_domain_alloc_irqs_parent(domain, irq, nr_irqs, &parent_args);
+	parent_fwspec.fwnode = domain->parent->fwnode;
+	parent_fwspec.param_count = 3;
+	parent_fwspec.param[0] = 0;
+	parent_fwspec.param[1] = hwirq;
+	parent_fwspec.param[2] = fwspec->param[2];
+
+	return irq_domain_alloc_irqs_parent(domain, irq, nr_irqs,
+					    &parent_fwspec);
 }
 
 static struct irq_domain_ops imx_gpcv2_domain_ops = {
@@ -699,6 +721,41 @@ static struct irq_domain_ops imx_gpcv2_domain_ops = {
 	.alloc	= imx_gpcv2_domain_alloc,
 	.free	= irq_domain_free_irqs_common,
 };
+
+static int imx_usb_hsic_regulator_notify(struct notifier_block *nb,
+					unsigned long event,
+					void *ignored)
+{
+	u32 val = 0;
+
+	val = readl_relaxed(gpc_base + GPC_PGC_CPU_MAPPING);
+	writel_relaxed(val | BIT(6), gpc_base + GPC_PGC_CPU_MAPPING);
+
+	switch (event) {
+	case REGULATOR_EVENT_PRE_DO_ENABLE:
+		val = readl_relaxed(gpc_base + GPC_PU_PGC_SW_PUP_REQ);
+		writel_relaxed(val | BIT(4), gpc_base + GPC_PU_PGC_SW_PUP_REQ);
+		while (readl_relaxed(gpc_base + GPC_PU_PGC_SW_PUP_REQ) & BIT(4))
+			;
+		break;
+	case REGULATOR_EVENT_PRE_DO_DISABLE:
+		/* only disable phy need to set PGC bit, enable does NOT need */
+		imx_gpcv2_set_m_core_pgc(true, GPC_PGC_USB_HSIC_PHY);
+		val = readl_relaxed(gpc_base + GPC_PU_PGC_SW_PDN_REQ);
+		writel_relaxed(val | BIT(4), gpc_base + GPC_PU_PGC_SW_PDN_REQ);
+		while (readl_relaxed(gpc_base + GPC_PU_PGC_SW_PDN_REQ) & BIT(4))
+			;
+		imx_gpcv2_set_m_core_pgc(false, GPC_PGC_USB_HSIC_PHY);
+		break;
+	default:
+		break;
+	}
+
+	val = readl_relaxed(gpc_base + GPC_PGC_CPU_MAPPING);
+	writel_relaxed(val & ~BIT(6), gpc_base + GPC_PGC_CPU_MAPPING);
+
+	return NOTIFY_OK;
+}
 
 static int imx_mipi_regulator_notify(struct notifier_block *nb,
 					unsigned long event,
@@ -710,7 +767,12 @@ static int imx_mipi_regulator_notify(struct notifier_block *nb,
 	writel_relaxed(val | BIT(2), gpc_base + GPC_PGC_CPU_MAPPING);
 
 	switch (event) {
-	case REGULATOR_EVENT_PRE_DO_ENABLE:
+	case REGULATOR_EVENT_AFT_DO_ENABLE:
+		/*
+		 * For imx7d pcie phy, VDD18 turn on time has to wait
+		 * at least 0.1 .s after VDD10 turns on.
+		 */
+		udelay(1);
 		val = readl_relaxed(gpc_base + GPC_PU_PGC_SW_PUP_REQ);
 		writel_relaxed(val | BIT(0), gpc_base + GPC_PU_PGC_SW_PUP_REQ);
 		while (readl_relaxed(gpc_base + GPC_PU_PGC_SW_PUP_REQ) & BIT(0))
@@ -724,6 +786,11 @@ static int imx_mipi_regulator_notify(struct notifier_block *nb,
 		while (readl_relaxed(gpc_base + GPC_PU_PGC_SW_PDN_REQ) & BIT(0))
 			;
 		imx_gpcv2_set_m_core_pgc(false, GPC_PGC_MIPI_PHY);
+		/*
+		 * For imx7d pcie phy, VDD18 turn off time has to advance
+		 * at least 0.1 .s before VDD10 turns off.
+		 */
+		udelay(1);
 		break;
 	default:
 		break;
@@ -745,7 +812,12 @@ static int imx_pcie_regulator_notify(struct notifier_block *nb,
 	writel_relaxed(val | BIT(3), gpc_base + GPC_PGC_CPU_MAPPING);
 
 	switch (event) {
-	case REGULATOR_EVENT_PRE_DO_ENABLE:
+	case REGULATOR_EVENT_AFT_DO_ENABLE:
+		/*
+		 * For imx7d pcie phy, VDD18 turn on time has to wait
+		 * at least 0.1 .s after VDD10 turns on.
+		 */
+		udelay(1);
 		val = readl_relaxed(gpc_base + GPC_PU_PGC_SW_PUP_REQ);
 		writel_relaxed(val | BIT(1), gpc_base + GPC_PU_PGC_SW_PUP_REQ);
 		while (readl_relaxed(gpc_base + GPC_PU_PGC_SW_PUP_REQ) & BIT(1))
@@ -759,6 +831,11 @@ static int imx_pcie_regulator_notify(struct notifier_block *nb,
 		while (readl_relaxed(gpc_base + GPC_PU_PGC_SW_PDN_REQ) & BIT(1))
 			;
 		imx_gpcv2_set_m_core_pgc(false, GPC_PGC_PCIE_PHY);
+		/*
+		 * For imx7d pcie phy, VDD18 turn off time has to advance
+		 * at least 0.1 .s before VDD10 turns off.
+		 */
+		udelay(1);
 		break;
 	default:
 		break;
@@ -901,7 +978,7 @@ void __init imx_gpcv2_check_dt(void)
 static int imx_gpcv2_probe(struct platform_device *pdev)
 {
 	int ret;
-	struct regulator *mipi_reg, *pcie_reg;
+	struct regulator *mipi_reg, *pcie_reg, *usb_hsic_reg;
 
 	if (cpu_is_imx7d()) {
 		mipi_reg = devm_regulator_get(&pdev->dev, "mipi-phy");
@@ -935,12 +1012,27 @@ static int imx_gpcv2_probe(struct platform_device *pdev)
 				"pcie regulator notifier request failed\n");
 			return ret;
 		}
+
+		usb_hsic_reg = devm_regulator_get(&pdev->dev, "vcc");
+		if (IS_ERR(usb_hsic_reg)) {
+			ret = PTR_ERR(usb_hsic_reg);
+			dev_err(&pdev->dev, "usb hsic regulator not ready.\n");
+			return ret;
+		}
+		nb_usb_hsic.notifier_call = &imx_usb_hsic_regulator_notify;
+
+		ret = regulator_register_notifier(usb_hsic_reg, &nb_usb_hsic);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"usb hsic regulator notifier request failed\n");
+			return ret;
+		}
 	}
 	return 0;
 }
 
 static struct of_device_id imx_gpcv2_dt_ids[] = {
-	{ .compatible = "fsl,imx7d-gpc" },
+	{ .compatible = "fsl,imx7d-pgc" },
 	{ }
 };
 

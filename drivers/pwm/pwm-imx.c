@@ -114,7 +114,7 @@ static int imx_pwm_config_v2(struct pwm_chip *chip,
 	unsigned long long c;
 	unsigned long period_cycles, duty_cycles, prescale;
 	unsigned int period_ms;
-	bool enable = test_bit(PWMF_ENABLED, &pwm->flags);
+	bool enable = pwm_is_enabled(pwm);
 	int wait_count = 0, fifoav;
 	u32 cr, sr;
 
@@ -129,7 +129,8 @@ static int imx_pwm_config_v2(struct pwm_chip *chip,
 		sr = readl(imx->mmio_base + MX3_PWMSR);
 		fifoav = sr & MX3_PWMSR_FIFOAV_MASK;
 		if (fifoav == MX3_PWMSR_FIFOAV_4WORDS) {
-			period_ms = DIV_ROUND_UP(pwm->period, NSEC_PER_MSEC);
+			period_ms = DIV_ROUND_UP(pwm_get_period(pwm),
+						 NSEC_PER_MSEC);
 			msleep(period_ms);
 
 			sr = readl(imx->mmio_base + MX3_PWMSR);
@@ -205,13 +206,20 @@ static int imx_pwm_config(struct pwm_chip *chip,
 	struct imx_chip *imx = to_imx_chip(chip);
 	int ret;
 
-	ret = clk_prepare_enable(imx->clk_ipg);
+	ret = clk_prepare_enable(imx->clk_per);
 	if (ret)
 		return ret;
+
+	ret = clk_prepare_enable(imx->clk_ipg);
+	if (ret) {
+		clk_disable_unprepare(imx->clk_per);
+		return ret;
+	}
 
 	ret = imx->config(chip, pwm, duty_ns, period_ns);
 
 	clk_disable_unprepare(imx->clk_ipg);
+	clk_disable_unprepare(imx->clk_per);
 
 	return ret;
 }
@@ -225,6 +233,12 @@ static int imx_pwm_enable(struct pwm_chip *chip, struct pwm_device *pwm)
 	if (ret)
 		return ret;
 
+	ret = clk_prepare_enable(imx->clk_ipg);
+	if (ret) {
+		clk_disable_unprepare(imx->clk_per);
+		return ret;
+	}
+
 	imx->set_enable(chip, true);
 
 	return 0;
@@ -236,6 +250,7 @@ static void imx_pwm_disable(struct pwm_chip *chip, struct pwm_device *pwm)
 
 	imx->set_enable(chip, false);
 
+	clk_disable_unprepare(imx->clk_ipg);
 	clk_disable_unprepare(imx->clk_per);
 }
 

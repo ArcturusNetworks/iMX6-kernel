@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2016 Vivante Corporation
+*    Copyright (c) 2014 - 2018 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2016 Vivante Corporation
+*    Copyright (C) 2014 - 2018 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -57,9 +57,34 @@
 #define __gc_hal_kernel_device_h_
 
 #include "gc_hal_kernel_debugfs.h"
+#include "gc_hal_ta.h"
+
+typedef struct _gcsDEVICE_CONSTRUCT_ARGS
+{
+    gctBOOL             recovery;
+    gctUINT             stuckDump;
+    gctUINT             gpu3DMinClock;
+
+    gctBOOL             contiguousRequested;
+    gcsPLATFORM*        platform;
+    gctBOOL             mmu;
+    gctBOOL             registerMemMapped;
+    gctPOINTER             registerMemAddress;
+#if gcdDEC_ENABLE_AHB
+    gctUINT32           registerMemBaseDEC300;
+    gctSIZE_T           registerMemSizeDEC300;
+#endif
+    gctINT              irqs[gcvCORE_COUNT];
+    gctUINT             registerBases[gcvCORE_COUNT];
+    gctUINT             registerSizes[gcvCORE_COUNT];
+    gctBOOL             powerManagement;
+    gctBOOL             gpuProfiler;
+    gctUINT             chipIDs[gcvCORE_COUNT];
+}
+gcsDEVICE_CONSTRUCT_ARGS;
 
 /******************************************************************************\
-******************************* gckGALDEVICE Structure *******************************
+************************** gckGALDEVICE Structure ******************************
 \******************************************************************************/
 
 typedef struct _gckGALDEVICE
@@ -76,55 +101,44 @@ typedef struct _gckGALDEVICE
     gctUINT32           internalPhysicalName;
     gctPOINTER          internalLogical;
     gckVIDMEM           internalVidMem;
+
+    gctUINT32           externalBase;
     gctSIZE_T           externalSize;
     gctPHYS_ADDR        externalPhysical;
     gctUINT32           externalPhysicalName;
     gctPOINTER          externalLogical;
     gckVIDMEM           externalVidMem;
+
+    gctPHYS_ADDR_T      contiguousBase;
+    gctSIZE_T           contiguousSize;
+
     gckVIDMEM           contiguousVidMem;
-    gctPOINTER          contiguousBase;
+    gctPOINTER          contiguousLogical;
     gctPHYS_ADDR        contiguousPhysical;
     gctUINT32           contiguousPhysicalName;
-    gctSIZE_T           contiguousSize;
-    gctBOOL             contiguousMapped;
-    gctPOINTER          contiguousMappedUser;
-    gctBOOL             contiguousRequested;
+
     gctSIZE_T           systemMemorySize;
     gctUINT32           systemMemoryBaseAddress;
-#if gcdMULTI_GPU
-    gctPOINTER          registerBase3D[gcdMULTI_GPU];
-    gctSIZE_T           registerSize3D[gcdMULTI_GPU];
-#endif
     gctPOINTER          registerBases[gcdMAX_GPU_COUNT];
     gctSIZE_T           registerSizes[gcdMAX_GPU_COUNT];
+
     gctUINT32           baseAddress;
     gctUINT32           physBase;
     gctUINT32           physSize;
-    gctBOOL             mmu;
-#if gcdMULTI_GPU
-    gctUINT32           requestedRegisterMemBase3D[gcdMULTI_GPU];
-    gctSIZE_T           requestedRegisterMemSize3D[gcdMULTI_GPU];
-#endif
+
+    /* By request_mem_region. */
     gctUINT32           requestedRegisterMemBases[gcdMAX_GPU_COUNT];
     gctSIZE_T           requestedRegisterMemSizes[gcdMAX_GPU_COUNT];
+
+    /* By request_mem_region. */
     gctUINT32           requestedContiguousBase;
     gctSIZE_T           requestedContiguousSize;
 
     /* IRQ management. */
-#if gcdMULTI_GPU
-    gctINT              irqLine3D[gcdMULTI_GPU];
-    gctBOOL             isrInitialized3D[gcdMULTI_GPU];
-    gctBOOL             dataReady3D[gcdMULTI_GPU];
-#endif
     gctINT              irqLines[gcdMAX_GPU_COUNT];
     gctBOOL             isrInitializeds[gcdMAX_GPU_COUNT];
 
     /* Thread management. */
-#if gcdMULTI_GPU
-    struct task_struct  *threadCtxt3D[gcdMULTI_GPU];
-    wait_queue_head_t   intrWaitQueue3D[gcdMULTI_GPU];
-    gctBOOL             threadInitialized3D[gcdMULTI_GPU];
-#endif
     struct task_struct  *threadCtxts[gcdMAX_GPU_COUNT];
     struct semaphore    semas[gcdMAX_GPU_COUNT];
     gctBOOL             threadInitializeds[gcdMAX_GPU_COUNT];
@@ -133,9 +147,6 @@ typedef struct _gckGALDEVICE
     /* Signal management. */
     gctINT              signal;
 
-    /* Core mapping */
-    gceCORE             coreMapping[8];
-
     /* States before suspend. */
     gceCHIPPOWERSTATE   statesStored[gcdMAX_GPU_COUNT];
 
@@ -143,44 +154,34 @@ typedef struct _gckGALDEVICE
     struct _gcsDEBUGFS_Node * dbgNode;
 
     gcsDEBUGFS_DIR      debugfsDir;
+
+    gckDEVICE           device;
+
+    gcsDEVICE_CONSTRUCT_ARGS args;
+
+    /* gctsOs object for trust application. */
+    gctaOS              taos;
+
+#if gcdENABLE_DRM
+    void*               drm;
+#endif
 }
 * gckGALDEVICE;
 
 typedef struct _gcsHAL_PRIVATE_DATA
 {
     gckGALDEVICE        device;
-    gctPOINTER          mappedMemory;
-    gctPOINTER          contiguousLogical;
-    /* The process opening the device may not be the same as the one that closes it. */
+    /*
+     * 'fput' schedules actual work in '__fput' in a different thread.
+     * So the process opens the device may not be the same as the one that
+     * closes it.
+     */
     gctUINT32           pidOpen;
 }
 gcsHAL_PRIVATE_DATA, * gcsHAL_PRIVATE_DATA_PTR;
 
-typedef struct _gcsDEVICE_CONSTRUCT_ARGS
-{
-    gctBOOL             recovery;
-    gctUINT             stuckDump;
-    gctUINT             gpu3DMinClock;
-
-    gctBOOL             contiguousRequested;
-    gcsPLATFORM*        platform;
-    gctBOOL             mmu;
-    gctBOOL             registerMemMapped;
-    gctPOINTER             registerMemAddress;
-#if gcdENABLE_DEC_COMPRESSION
-    gctUINT32           registerMemBaseDEC300;
-    gctSIZE_T           registerMemSizeDEC300;
-#endif
-}
-
-gcsDEVICE_CONSTRUCT_ARGS;
-
 gceSTATUS gckGALDEVICE_Setup_ISR(
-    IN gckGALDEVICE Device
-    );
-
-gceSTATUS gckGALDEVICE_Setup_ISR_2D(
-    IN gckGALDEVICE Device
+    IN gceCORE Core
     );
 
 gceSTATUS gckGALDEVICE_Setup_ISR_VG(
@@ -188,11 +189,7 @@ gceSTATUS gckGALDEVICE_Setup_ISR_VG(
     );
 
 gceSTATUS gckGALDEVICE_Release_ISR(
-    IN gckGALDEVICE Device
-    );
-
-gceSTATUS gckGALDEVICE_Release_ISR_2D(
-    IN gckGALDEVICE Device
+    IN gceCORE Core
     );
 
 gceSTATUS gckGALDEVICE_Release_ISR_VG(
@@ -216,18 +213,9 @@ gceSTATUS gckGALDEVICE_Stop(
     );
 
 gceSTATUS gckGALDEVICE_Construct(
-#if gcdMULTI_GPU || gcdMULTI_GPU_AFFINITY
-    IN gctINT IrqLine3D0,
-    IN gctUINT32 RegisterMemBase3D0,
-    IN gctSIZE_T RegisterMemSize3D0,
-    IN gctINT IrqLine3D1,
-    IN gctUINT32 RegisterMemBase3D1,
-    IN gctSIZE_T RegisterMemSize3D1,
-#else
     IN gctINT IrqLine,
     IN gctUINT32 RegisterMemBase,
     IN gctSIZE_T RegisterMemSize,
-#endif
     IN gctINT IrqLine2D,
     IN gctUINT32 RegisterMemBase2D,
     IN gctSIZE_T RegisterMemSize2D,
@@ -236,6 +224,8 @@ gceSTATUS gckGALDEVICE_Construct(
     IN gctSIZE_T RegisterMemSizeVG,
     IN gctUINT32 ContiguousBase,
     IN gctSIZE_T ContiguousSize,
+    IN gctUINT32 ExternalBase,
+    IN gctSIZE_T ExternalSize,
     IN gctSIZE_T BankSize,
     IN gctINT FastClear,
     IN gctINT Compression,

@@ -691,6 +691,8 @@ static int sba_dma_supported( struct device *dev, u64 mask)
 		return 0;
 
 	ioc = GET_IOC(dev);
+	if (!ioc)
+		return 0;
 
 	/*
 	 * check if mask is >= than the current max IO Virt Address
@@ -722,6 +724,8 @@ sba_map_single(struct device *dev, void *addr, size_t size,
 	int pide;
 
 	ioc = GET_IOC(dev);
+	if (!ioc)
+		return DMA_ERROR_CODE;
 
 	/* save offset bits */
 	offset = ((dma_addr_t) (long) addr) & ~IOVP_MASK;
@@ -780,8 +784,18 @@ sba_map_single(struct device *dev, void *addr, size_t size,
 }
 
 
+static dma_addr_t
+sba_map_page(struct device *dev, struct page *page, unsigned long offset,
+		size_t size, enum dma_data_direction direction,
+		unsigned long attrs)
+{
+	return sba_map_single(dev, page_address(page) + offset, size,
+			direction);
+}
+
+
 /**
- * sba_unmap_single - unmap one IOVA and free resources
+ * sba_unmap_page - unmap one IOVA and free resources
  * @dev: instance of PCI owned by the driver that's asking.
  * @iova:  IOVA of driver buffer previously mapped.
  * @size:  number of bytes mapped in driver buffer.
@@ -790,8 +804,8 @@ sba_map_single(struct device *dev, void *addr, size_t size,
  * See Documentation/DMA-API-HOWTO.txt
  */
 static void
-sba_unmap_single(struct device *dev, dma_addr_t iova, size_t size,
-		 enum dma_data_direction direction)
+sba_unmap_page(struct device *dev, dma_addr_t iova, size_t size,
+		enum dma_data_direction direction, unsigned long attrs)
 {
 	struct ioc *ioc;
 #if DELAYED_RESOURCE_CNT > 0
@@ -803,6 +817,10 @@ sba_unmap_single(struct device *dev, dma_addr_t iova, size_t size,
 	DBG_RUN("%s() iovp 0x%lx/%x\n", __func__, (long) iova, size);
 
 	ioc = GET_IOC(dev);
+	if (!ioc) {
+		WARN_ON(!ioc);
+		return;
+	}
 	offset = iova & ~IOVP_MASK;
 	iova ^= offset;        /* clear offset bits */
 	size += offset;
@@ -858,15 +876,15 @@ sba_unmap_single(struct device *dev, dma_addr_t iova, size_t size,
 
 
 /**
- * sba_alloc_consistent - allocate/map shared mem for DMA
+ * sba_alloc - allocate/map shared mem for DMA
  * @hwdev: instance of PCI owned by the driver that's asking.
  * @size:  number of bytes mapped in driver buffer.
  * @dma_handle:  IOVA of new buffer.
  *
  * See Documentation/DMA-API-HOWTO.txt
  */
-static void *sba_alloc_consistent(struct device *hwdev, size_t size,
-					dma_addr_t *dma_handle, gfp_t gfp)
+static void *sba_alloc(struct device *hwdev, size_t size, dma_addr_t *dma_handle,
+		gfp_t gfp, unsigned long attrs)
 {
 	void *ret;
 
@@ -888,7 +906,7 @@ static void *sba_alloc_consistent(struct device *hwdev, size_t size,
 
 
 /**
- * sba_free_consistent - free/unmap shared mem for DMA
+ * sba_free - free/unmap shared mem for DMA
  * @hwdev: instance of PCI owned by the driver that's asking.
  * @size:  number of bytes mapped in driver buffer.
  * @vaddr:  virtual address IOVA of "consistent" buffer.
@@ -897,10 +915,10 @@ static void *sba_alloc_consistent(struct device *hwdev, size_t size,
  * See Documentation/DMA-API-HOWTO.txt
  */
 static void
-sba_free_consistent(struct device *hwdev, size_t size, void *vaddr,
-		    dma_addr_t dma_handle)
+sba_free(struct device *hwdev, size_t size, void *vaddr,
+		    dma_addr_t dma_handle, unsigned long attrs)
 {
-	sba_unmap_single(hwdev, dma_handle, size, 0);
+	sba_unmap_page(hwdev, dma_handle, size, 0, 0);
 	free_pages((unsigned long) vaddr, get_order(size));
 }
 
@@ -933,7 +951,7 @@ int dump_run_sg = 0;
  */
 static int
 sba_map_sg(struct device *dev, struct scatterlist *sglist, int nents,
-	   enum dma_data_direction direction)
+	   enum dma_data_direction direction, unsigned long attrs)
 {
 	struct ioc *ioc;
 	int coalesced, filled = 0;
@@ -942,6 +960,8 @@ sba_map_sg(struct device *dev, struct scatterlist *sglist, int nents,
 	DBG_RUN_SG("%s() START %d entries\n", __func__, nents);
 
 	ioc = GET_IOC(dev);
+	if (!ioc)
+		return 0;
 
 	/* Fast path single entry scatterlists. */
 	if (nents == 1) {
@@ -1016,7 +1036,7 @@ sba_map_sg(struct device *dev, struct scatterlist *sglist, int nents,
  */
 static void 
 sba_unmap_sg(struct device *dev, struct scatterlist *sglist, int nents,
-	     enum dma_data_direction direction)
+	     enum dma_data_direction direction, unsigned long attrs)
 {
 	struct ioc *ioc;
 #ifdef ASSERT_PDIR_SANITY
@@ -1027,6 +1047,10 @@ sba_unmap_sg(struct device *dev, struct scatterlist *sglist, int nents,
 		__func__, nents, sg_virt(sglist), sglist->length);
 
 	ioc = GET_IOC(dev);
+	if (!ioc) {
+		WARN_ON(!ioc);
+		return;
+	}
 
 #ifdef SBA_COLLECT_STATS
 	ioc->usg_calls++;
@@ -1040,7 +1064,8 @@ sba_unmap_sg(struct device *dev, struct scatterlist *sglist, int nents,
 
 	while (sg_dma_len(sglist) && nents--) {
 
-		sba_unmap_single(dev, sg_dma_address(sglist), sg_dma_len(sglist), direction);
+		sba_unmap_page(dev, sg_dma_address(sglist), sg_dma_len(sglist),
+				direction, 0);
 #ifdef SBA_COLLECT_STATS
 		ioc->usg_pages += ((sg_dma_address(sglist) & ~IOVP_MASK) + sg_dma_len(sglist) + IOVP_SIZE - 1) >> PAGE_SHIFT;
 		ioc->usingle_calls--;	/* kluge since call is unmap_sg() */
@@ -1058,19 +1083,14 @@ sba_unmap_sg(struct device *dev, struct scatterlist *sglist, int nents,
 
 }
 
-static struct hppa_dma_ops sba_ops = {
+static struct dma_map_ops sba_ops = {
 	.dma_supported =	sba_dma_supported,
-	.alloc_consistent =	sba_alloc_consistent,
-	.alloc_noncoherent =	sba_alloc_consistent,
-	.free_consistent =	sba_free_consistent,
-	.map_single =		sba_map_single,
-	.unmap_single =		sba_unmap_single,
+	.alloc =		sba_alloc,
+	.free =			sba_free,
+	.map_page =		sba_map_page,
+	.unmap_page =		sba_unmap_page,
 	.map_sg =		sba_map_sg,
 	.unmap_sg =		sba_unmap_sg,
-	.dma_sync_single_for_cpu =	NULL,
-	.dma_sync_single_for_device =	NULL,
-	.dma_sync_sg_for_cpu =		NULL,
-	.dma_sync_sg_for_device =	NULL,
 };
 
 
@@ -1854,14 +1874,9 @@ sba_proc_bitmap_info(struct seq_file *m, void *p)
 {
 	struct sba_device *sba_dev = sba_list;
 	struct ioc *ioc = &sba_dev->ioc[0];	/* FIXME: Multi-IOC support! */
-	unsigned int *res_ptr = (unsigned int *)ioc->res_map;
-	int i;
 
-	for (i = 0; i < (ioc->res_size/sizeof(unsigned int)); ++i, ++res_ptr) {
-		if ((i & 7) == 0)
-			seq_puts(m, "\n   ");
-		seq_printf(m, " %08x", *res_ptr);
-	}
+	seq_hex_dump(m, "   ", DUMP_PREFIX_NONE, 32, 4, ioc->res_map,
+		     ioc->res_size, false);
 	seq_putc(m, '\n');
 
 	return 0;

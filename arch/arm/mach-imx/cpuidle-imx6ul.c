@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Freescale Semiconductor, Inc.
+ * Copyright (C) 2015-2016 Freescale Semiconductor, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -12,6 +12,7 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/psci.h>
 #include <linux/regulator/consumer.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
@@ -19,6 +20,8 @@
 #include <asm/fncpy.h>
 #include <asm/proc-fns.h>
 #include <asm/suspend.h>
+
+#include <uapi/linux/psci.h>
 
 #include "common.h"
 #include "cpuidle.h"
@@ -50,6 +53,8 @@ static void __iomem *wfi_iram_base;
 static void __iomem *wfi_iram_base_phys;
 extern unsigned long mx6ul_lpm_wfi_start asm("mx6ul_lpm_wfi_start");
 extern unsigned long mx6ul_lpm_wfi_end asm("mx6ul_lpm_wfi_end");
+extern unsigned long mx6ull_lpm_wfi_start asm("mx6ull_lpm_wfi_start");
+extern unsigned long mx6ull_lpm_wfi_end asm("mx6ull_lpm_wfi_end");
 #endif
 
 struct imx6_pm_base {
@@ -81,9 +86,18 @@ static const u32 imx6ul_mmdc_io_offset[] __initconst = {
 
 static void (*imx6ul_wfi_in_iram_fn)(void __iomem *iram_vbase);
 
+#define MX6UL_POWERDWN_IDLE_PARAM	\
+	((1 << PSCI_0_2_POWER_STATE_ID_SHIFT) | \
+	 (1 << PSCI_0_2_POWER_STATE_AFFL_SHIFT) | \
+	 (PSCI_POWER_STATE_TYPE_POWER_DOWN << PSCI_0_2_POWER_STATE_TYPE_SHIFT))
+
 static int imx6ul_idle_finish(unsigned long val)
 {
-	imx6ul_wfi_in_iram_fn(wfi_iram_base);
+	if (psci_ops.cpu_suspend)
+		psci_ops.cpu_suspend(MX6UL_POWERDWN_IDLE_PARAM,
+				     __pa(cpu_resume));
+	else
+		imx6ul_wfi_in_iram_fn(wfi_iram_base);
 
 	return 0;
 }
@@ -93,9 +107,10 @@ static int imx6ul_enter_wait(struct cpuidle_device *dev,
 {
 	int mode = get_bus_freq_mode();
 
-	imx6q_set_lpm(WAIT_UNCLOCKED);
+	imx6_set_lpm(WAIT_UNCLOCKED);
 	if ((index == 1) || ((mode != BUS_FREQ_LOW) && index == 2)) {
 		cpu_do_idle();
+		index = 1;
 	} else {
 		/*
 		 * i.MX6UL TO1.0 ARM power up uses IPG/2048 as clock source,
@@ -121,7 +136,7 @@ static int imx6ul_enter_wait(struct cpuidle_device *dev,
 			imx_gpc_switch_pupscr_clk(false);
 	}
 
-	imx6q_set_lpm(WAIT_CLOCKED);
+	imx6_set_lpm(WAIT_CLOCKED);
 
 	return index;
 }
@@ -238,13 +253,20 @@ int __init imx6ul_cpuidle_init(void)
 		cpuidle_pm_info->mmdc_io_val[i][0] = mmdc_offset_array[i];
 
 	/* calculate the wfi code size */
-	wfi_code_size = (&mx6ul_lpm_wfi_end -&mx6ul_lpm_wfi_start) *4;
+	if (cpu_is_imx6ul()) {
+		wfi_code_size = (&mx6ul_lpm_wfi_end -&mx6ul_lpm_wfi_start) *4;
 
-	imx6ul_wfi_in_iram_fn = (void *)fncpy(wfi_iram_base + sizeof(*cpuidle_pm_info),
-		&imx6ul_low_power_idle, wfi_code_size);
+		imx6ul_wfi_in_iram_fn = (void *)fncpy(wfi_iram_base + sizeof(*cpuidle_pm_info),
+			&imx6ul_low_power_idle, wfi_code_size);
+	} else {
+		wfi_code_size = (&mx6ull_lpm_wfi_end -&mx6ull_lpm_wfi_start) *4;
+
+		imx6ul_wfi_in_iram_fn = (void *)fncpy(wfi_iram_base + sizeof(*cpuidle_pm_info),
+			&imx6ull_low_power_idle, wfi_code_size);
+	}
 #endif
 
-	imx6q_set_int_mem_clk_lpm(true);
+	imx6_set_int_mem_clk_lpm(true);
 
 	/*
 	 * enable RC-OSC here, as it needs at least 4ms for RC-OSC to

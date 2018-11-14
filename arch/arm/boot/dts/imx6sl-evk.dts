@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2013 Freescale Semiconductor, Inc.
+ * Copyright 2017 NXP.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -125,6 +126,7 @@
 			"IN3R", "AMIC";
 		mux-int-port = <2>;
 		mux-ext-port = <3>;
+		codec-master;
 		hp-det-gpios = <&gpio4 19 1>;
 	};
 
@@ -150,9 +152,19 @@
 	status = "okay";
 };
 
-&cpu0 {
-	arm-supply = <&sw1a_reg>;
-	soc-supply = <&sw1c_reg>;
+&reg_arm {
+	vin-supply = <&sw1a_reg>;
+	regulator-allow-bypass;
+};
+
+&reg_soc {
+	vin-supply = <&sw1c_reg>;
+	regulator-allow-bypass;
+};
+
+&reg_pu {
+	vin-supply = <&sw1c_reg>;
+	regulator-allow-bypass;
 };
 
 &csi {
@@ -173,7 +185,7 @@
 	flash: m25p80@0 {
 		#address-cells = <1>;
 		#size-cells = <1>;
-		compatible = "st,m25p32";
+		compatible = "st,m25p32", "jedec,spi-nor";
 		spi-max-frequency = <20000000>;
 		reg = <0>;
 	};
@@ -251,6 +263,7 @@
 			sw4_reg: sw4 {
 				regulator-min-microvolt = <800000>;
 				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
 			};
 
 			swbst_reg: swbst {
@@ -366,10 +379,10 @@
 
 			VCOM_reg: VCOM {
 				regulator-name = "VCOM";
-				/* 2's-compliment, -4325000 */
-				regulator-min-microvolt = <0xffbe0178>;
-				/* 2's-compliment, -500000 */
-				regulator-max-microvolt = <0xfff85ee0>;
+				/* Real max value: -500000 */
+				regulator-max-microvolt = <4325000>;
+				/* Real min value: -4325000 */
+				regulator-min-microvolt = <500000>;
 			};
 
 			VNEG_reg: VNEG {
@@ -836,10 +849,10 @@
 	pinctrl-0 = <&pinctrl_lcdif_dat
 		     &pinctrl_lcdif_ctrl>;
 	lcd-supply = <&reg_lcd_3v3>;
-	display = <&display>;
+	display = <&display0>;
 	status = "okay";
 
-	display: display {
+	display0: display@0 {
 		bits-per-pixel = <16>;
 		bus-width = <24>;
 

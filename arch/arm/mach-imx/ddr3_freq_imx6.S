@@ -39,6 +39,13 @@
 #define CCM_CDHIPR			0x48
 
 #define L2_CACHE_SYNC		0x730
+#define PL310_AUX_CTRL          0x104
+#define PL310_DCACHE_LOCKDOWN_BASE 0x900
+#define PL310_AUX_16WAY_BIT	0x10000
+#define PL310_LOCKDOWN_NBREGS   8
+#define PL310_LOCKDOWN_SZREG    4
+#define PL310_8WAYS_MASK        0x00FF
+#define PL310_16WAYS_UPPERMASK  0xFF00
 
 #define IMX6QP_REVISION_ID 0x630100
 #define ANADIG_DIGPROG     0x260
@@ -422,11 +429,20 @@ wait_for_l2_to_idle:
 	mov	r1, #0x0
 	str	r1, [r12, #L2_CACHE_SYNC]
 
-	/* Disable L2. */
-	str	r1, [r12, #0x100]
-
 	dsb
 	isb
+
+	ldr	r1, [r12, #PL310_AUX_CTRL]
+	tst	r1, #PL310_AUX_16WAY_BIT
+	mov	r1, #PL310_8WAYS_MASK
+	orrne	r1, #PL310_16WAYS_UPPERMASK
+	mov	r6, #PL310_LOCKDOWN_NBREGS
+	add	r5, r12, #PL310_DCACHE_LOCKDOWN_BASE
+1:	/* lock Dcache and Icache */
+	str	r1, [r5], #PL310_LOCKDOWN_SZREG
+	str	r1, [r5], #PL310_LOCKDOWN_SZREG
+	subs	r6, r6, #1
+	bne	1b
 #endif
 
 	/*
@@ -659,7 +675,11 @@ cont_1:
 	orr	r0, r0, #0x4
 	str	r0, [r5, #MMDC0_MDCF1]
 
-	ldr	r0, =0x00011680
+	ldr	r0, [r5, #MMDC0_MDMISC]
+	bic	r0, r0, #(0x3 << 16) /* walat = 0x1 */
+	orr	r0, r0, #(0x1 << 16)
+	bic	r0, r0, #(0x7 << 6)  /* ralat = 0x2 */
+	orr	r0, r0, #(0x2 << 6)
 	str	r0, [r5, #MMDC0_MDMISC]
 
 	/* enable dqs pull down in the IOMUX. */
@@ -790,7 +810,9 @@ poll_dvfs_clear_2:
 	cmp	r9, #0
 	beq	update_calibration_only
 
-	ldr	r0, =0xa1390003
+	/* issue zq calibration command */
+	ldr	r0, [r5, #MMDC0_MPZQHWCTRL]
+	orr	r0, r0, #0x3
 	str	r0, [r5, #MMDC0_MPZQHWCTRL]
 	ldr	r2, =MMDC1_MPZQHWCTRL
 	str	r0, [r5, r2]
@@ -846,10 +868,6 @@ update_iomux1:
 	ldr	r3, [r8, #0x4]
 	str	r3, [r5, r0]
 	add	r8, r8, #8
-
-	/* update MISC register: WALAT, RALAT */
-	ldr	r0, =0x00001740
-	str	r0, [r5, #MMDC0_MDMISC]
 
 	/* configure ddr devices to dll on, odt. */
 	ldr	r0, =0x00048031
@@ -1020,10 +1038,18 @@ done:
 	str	r0, [r5, #MMDC0_MAPSR]
 
 #ifdef CONFIG_CACHE_L2X0
-	/* Enable L2. */
-	ldr	r7, =IMX_IO_P2V(MX6Q_L2_BASE_ADDR)
-	ldr	r6, =0x1
-	str	r6, [r7, #0x100]
+	ldr	r1, [r12, #PL310_AUX_CTRL]
+	tst	r1, #PL310_AUX_16WAY_BIT
+	mov	r6, #PL310_LOCKDOWN_NBREGS
+	mov	r1, #0x00	/* 8 ways mask */
+	orrne	r1, #0x0000	/* 16 ways mask */
+	add	r5, r12, #PL310_DCACHE_LOCKDOWN_BASE
+1:	/* lock Dcache and Icache */
+	str	r1, [r5], #PL310_LOCKDOWN_SZREG
+	str	r1, [r5], #PL310_LOCKDOWN_SZREG
+	subs	r6, r6, #1
+	bne	1b
+
 	isb
 	dsb
 #endif

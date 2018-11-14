@@ -2,7 +2,7 @@
 *
 *    The MIT License (MIT)
 *
-*    Copyright (c) 2014 - 2016 Vivante Corporation
+*    Copyright (c) 2014 - 2018 Vivante Corporation
 *
 *    Permission is hereby granted, free of charge, to any person obtaining a
 *    copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 *
 *    The GPL License (GPL)
 *
-*    Copyright (C) 2014 - 2016 Vivante Corporation
+*    Copyright (C) 2014 - 2018 Vivante Corporation
 *
 *    This program is free software; you can redistribute it and/or
 *    modify it under the terms of the GNU General Public License
@@ -57,8 +57,23 @@
 #define __gc_hal_kernel_allocator_array_h_
 
 extern gceSTATUS
-_DefaultAlloctorInit(
+_GFPAlloctorInit(
     IN gckOS Os,
+    IN gcsDEBUGFS_DIR *Parent,
+    OUT gckALLOCATOR * Allocator
+    );
+
+extern gceSTATUS
+_UserMemoryAlloctorInit(
+    IN gckOS Os,
+    IN gcsDEBUGFS_DIR *Parent,
+    OUT gckALLOCATOR * Allocator
+    );
+
+extern gceSTATUS
+_ReservedMemoryAllocatorInit(
+    IN gckOS Os,
+    IN gcsDEBUGFS_DIR *Parent,
     OUT gckALLOCATOR * Allocator
     );
 
@@ -66,6 +81,7 @@ _DefaultAlloctorInit(
 extern gceSTATUS
 _CMAFSLAlloctorInit(
     IN gckOS Os,
+    IN gcsDEBUGFS_DIR *Parent,
     OUT gckALLOCATOR * Allocator
     );
 #endif
@@ -74,6 +90,16 @@ _CMAFSLAlloctorInit(
 extern gceSTATUS
 _DmabufAlloctorInit(
     IN gckOS Os,
+    IN gcsDEBUGFS_DIR *Parent,
+    OUT gckALLOCATOR * Allocator
+    );
+#endif
+
+#ifndef NO_DMA_COHERENT
+extern gceSTATUS
+_DmaAlloctorInit(
+    IN gckOS Os,
+    IN gcsDEBUGFS_DIR *Parent,
     OUT gckALLOCATOR * Allocator
     );
 #endif
@@ -83,13 +109,22 @@ gcsALLOCATOR_DESC allocatorArray[] =
 #if LINUX_CMA_FSL
     gcmkDEFINE_ALLOCATOR_DESC("cmafsl", _CMAFSLAlloctorInit),
 #endif
-    /* Default allocator. */
-    gcmkDEFINE_ALLOCATOR_DESC("default", _DefaultAlloctorInit),
+    /* GFP allocator. */
+    gcmkDEFINE_ALLOCATOR_DESC("gfp", _GFPAlloctorInit),
+
+    /* User memory importer. */
+    gcmkDEFINE_ALLOCATOR_DESC("user", _UserMemoryAlloctorInit),
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
     /* Dmabuf allocator. */
     gcmkDEFINE_ALLOCATOR_DESC("dmabuf", _DmabufAlloctorInit),
 #endif
+
+#ifndef NO_DMA_COHERENT
+    gcmkDEFINE_ALLOCATOR_DESC("dma", _DmaAlloctorInit),
+#endif
+
+    gcmkDEFINE_ALLOCATOR_DESC("reserved-mem", _ReservedMemoryAllocatorInit),
 };
 
 #endif

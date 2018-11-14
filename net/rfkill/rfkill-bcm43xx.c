@@ -117,7 +117,7 @@ static int bcm43xx_rfkill_probe(struct platform_device *pdev)
 	snprintf(rfkill->reset_name, len + 7 , "%s_reset", rfkill->name);
 	snprintf(rfkill->shutdown_name, len + 10, "%s_shutdown", rfkill->name);
 
-	gpio = devm_gpiod_get_index(&pdev->dev, rfkill->reset_name, 0);
+	gpio = devm_gpiod_get_index(&pdev->dev, rfkill->reset_name, 0, GPIOD_OUT_LOW);
 	if (!IS_ERR(gpio)) {
 		ret = gpiod_direction_output(gpio, 0);
 		if (ret)
@@ -125,7 +125,7 @@ static int bcm43xx_rfkill_probe(struct platform_device *pdev)
 		rfkill->reset_gpio = gpio;
 	}
 
-	gpio = devm_gpiod_get_index(&pdev->dev, rfkill->shutdown_name, 0);
+	gpio = devm_gpiod_get_index(&pdev->dev, rfkill->shutdown_name, 1, GPIOD_OUT_LOW);
 	if (!IS_ERR(gpio)) {
 		ret = gpiod_direction_output(gpio, 0);
 		if (ret)

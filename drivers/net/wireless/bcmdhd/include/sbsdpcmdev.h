@@ -22,7 +22,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: sbsdpcmdev.h 416730 2013-08-06 09:33:19Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: sbsdpcmdev.h 514727 2014-11-12 03:02:48Z $
  */
 
 #ifndef	_sbsdpcmdev_h_

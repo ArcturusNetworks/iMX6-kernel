@@ -92,8 +92,8 @@ int ide_queue_pc_tail(ide_drive_t *drive, struct gendisk *disk,
 	struct request *rq;
 	int error;
 
-	rq = blk_get_request(drive->queue, READ, __GFP_WAIT);
-	rq->cmd_type = REQ_TYPE_SPECIAL;
+	rq = blk_get_request(drive->queue, READ, __GFP_RECLAIM);
+	rq->cmd_type = REQ_TYPE_DRV_PRIV;
 	rq->special = (char *)pc;
 
 	if (buf && bufflen) {
@@ -191,7 +191,7 @@ void ide_prep_sense(ide_drive_t *drive, struct request *rq)
 
 	BUG_ON(sense_len > sizeof(*sense));
 
-	if (rq->cmd_type == REQ_TYPE_SENSE || drive->sense_rq_armed)
+	if (rq->cmd_type == REQ_TYPE_ATA_SENSE || drive->sense_rq_armed)
 		return;
 
 	memset(sense, 0, sizeof(*sense));
@@ -210,8 +210,8 @@ void ide_prep_sense(ide_drive_t *drive, struct request *rq)
 	sense_rq->rq_disk = rq->rq_disk;
 	sense_rq->cmd[0] = GPCMD_REQUEST_SENSE;
 	sense_rq->cmd[4] = cmd_len;
-	sense_rq->cmd_type = REQ_TYPE_SENSE;
-	sense_rq->cmd_flags |= REQ_PREEMPT;
+	sense_rq->cmd_type = REQ_TYPE_ATA_SENSE;
+	sense_rq->rq_flags |= RQF_PREEMPT;
 
 	if (drive->media == ide_tape)
 		sense_rq->cmd[13] = REQ_IDETAPE_PC1;
@@ -295,7 +295,7 @@ int ide_cd_expiry(ide_drive_t *drive)
 		wait = ATAPI_WAIT_PC;
 		break;
 	default:
-		if (!(rq->cmd_flags & REQ_QUIET))
+		if (!(rq->rq_flags & RQF_QUIET))
 			printk(KERN_INFO PFX "cmd 0x%x timed out\n",
 					 rq->cmd[0]);
 		wait = 0;
@@ -310,7 +310,7 @@ int ide_cd_get_xferlen(struct request *rq)
 	switch (rq->cmd_type) {
 	case REQ_TYPE_FS:
 		return 32768;
-	case REQ_TYPE_SENSE:
+	case REQ_TYPE_ATA_SENSE:
 	case REQ_TYPE_BLOCK_PC:
 	case REQ_TYPE_ATA_PC:
 		return blk_rq_bytes(rq);
@@ -375,7 +375,7 @@ int ide_check_ireason(ide_drive_t *drive, struct request *rq, int len,
 	}
 
 	if (dev_is_idecd(drive) && rq->cmd_type == REQ_TYPE_ATA_PC)
-		rq->cmd_flags |= REQ_FAILED;
+		rq->rq_flags |= RQF_FAILED;
 
 	return 1;
 }
@@ -477,7 +477,7 @@ static ide_startstop_t ide_pc_intr(ide_drive_t *drive)
 		if (uptodate == 0)
 			drive->failed_pc = NULL;
 
-		if (rq->cmd_type == REQ_TYPE_SPECIAL) {
+		if (rq->cmd_type == REQ_TYPE_DRV_PRIV) {
 			rq->errors = 0;
 			error = 0;
 		} else {

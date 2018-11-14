@@ -40,7 +40,6 @@
 
 #include <asm/div64.h>
 #include <asm/io.h>
-#include <asm/sizes.h>
 
 #include "mmci.h"
 #include "mmci_qcom_dml.h"
@@ -151,6 +150,7 @@ static struct variant_data variant_nomadik = {
 	.fifosize		= 16 * 4,
 	.fifohalfsize		= 8 * 4,
 	.clkreg			= MCI_CLK_ENABLE,
+	.clkreg_8bit_bus_enable = MCI_ST_8BIT_BUS,
 	.datalength_bits	= 24,
 	.datactrl_mask_sdio	= MCI_ST_DPSM_SDIOEN,
 	.st_sdio		= true,
@@ -226,15 +226,10 @@ static int mmci_card_busy(struct mmc_host *mmc)
 	unsigned long flags;
 	int busy = 0;
 
-	pm_runtime_get_sync(mmc_dev(mmc));
-
 	spin_lock_irqsave(&host->lock, flags);
 	if (readl(host->base + MMCISTATUS) & MCI_ST_CARDBUSY)
 		busy = 1;
 	spin_unlock_irqrestore(&host->lock, flags);
-
-	pm_runtime_mark_last_busy(mmc_dev(mmc));
-	pm_runtime_put_autosuspend(mmc_dev(mmc));
 
 	return busy;
 }
@@ -381,9 +376,6 @@ mmci_request_end(struct mmci_host *host, struct mmc_request *mrq)
 	host->cmd = NULL;
 
 	mmc_request_done(host->mmc, mrq);
-
-	pm_runtime_mark_last_busy(mmc_dev(host->mmc));
-	pm_runtime_put_autosuspend(mmc_dev(host->mmc));
 }
 
 static void mmci_set_mask1(struct mmci_host *host, unsigned int mask)
@@ -500,6 +492,7 @@ static void mmci_dma_data_error(struct mmci_host *host)
 {
 	dev_err(mmc_dev(host->mmc), "error during DMA transfer!\n");
 	dmaengine_terminate_all(host->dma_current);
+	host->dma_in_progress = false;
 	host->dma_current = NULL;
 	host->dma_desc_current = NULL;
 	host->data->host_cookie = 0;
@@ -508,17 +501,14 @@ static void mmci_dma_data_error(struct mmci_host *host)
 static void mmci_dma_unmap(struct mmci_host *host, struct mmc_data *data)
 {
 	struct dma_chan *chan;
-	enum dma_data_direction dir;
 
-	if (data->flags & MMC_DATA_READ) {
-		dir = DMA_FROM_DEVICE;
+	if (data->flags & MMC_DATA_READ)
 		chan = host->dma_rx_channel;
-	} else {
-		dir = DMA_TO_DEVICE;
+	else
 		chan = host->dma_tx_channel;
-	}
 
-	dma_unmap_sg(chan->device->dev, data->sg, data->sg_len, dir);
+	dma_unmap_sg(chan->device->dev, data->sg, data->sg_len,
+		     mmc_get_dma_dir(data));
 }
 
 static void mmci_dma_finalize(struct mmci_host *host, struct mmc_data *data)
@@ -558,6 +548,7 @@ static void mmci_dma_finalize(struct mmci_host *host, struct mmc_data *data)
 		mmci_dma_release(host);
 	}
 
+	host->dma_in_progress = false;
 	host->dma_current = NULL;
 	host->dma_desc_current = NULL;
 }
@@ -580,17 +571,14 @@ static int __mmci_dma_prep_data(struct mmci_host *host, struct mmc_data *data,
 	struct dma_chan *chan;
 	struct dma_device *device;
 	struct dma_async_tx_descriptor *desc;
-	enum dma_data_direction buffer_dirn;
 	int nr_sg;
 	unsigned long flags = DMA_CTRL_ACK;
 
 	if (data->flags & MMC_DATA_READ) {
 		conf.direction = DMA_DEV_TO_MEM;
-		buffer_dirn = DMA_FROM_DEVICE;
 		chan = host->dma_rx_channel;
 	} else {
 		conf.direction = DMA_MEM_TO_DEV;
-		buffer_dirn = DMA_TO_DEVICE;
 		chan = host->dma_tx_channel;
 	}
 
@@ -603,7 +591,8 @@ static int __mmci_dma_prep_data(struct mmci_host *host, struct mmc_data *data,
 		return -EINVAL;
 
 	device = chan->device;
-	nr_sg = dma_map_sg(device->dev, data->sg, data->sg_len, buffer_dirn);
+	nr_sg = dma_map_sg(device->dev, data->sg, data->sg_len,
+			   mmc_get_dma_dir(data));
 	if (nr_sg == 0)
 		return -EINVAL;
 
@@ -622,7 +611,8 @@ static int __mmci_dma_prep_data(struct mmci_host *host, struct mmc_data *data,
 	return 0;
 
  unmap_exit:
-	dma_unmap_sg(device->dev, data->sg, data->sg_len, buffer_dirn);
+	dma_unmap_sg(device->dev, data->sg, data->sg_len,
+		     mmc_get_dma_dir(data));
 	return -ENOMEM;
 }
 
@@ -658,6 +648,7 @@ static int mmci_dma_start_data(struct mmci_host *host, unsigned int datactrl)
 	dev_vdbg(mmc_dev(host->mmc),
 		 "Submit MMCI DMA job, sglen %d blksz %04x blks %04x flags %08x\n",
 		 data->sg_len, data->blksz, data->blocks, data->flags);
+	host->dma_in_progress = true;
 	dmaengine_submit(host->dma_desc_current);
 	dma_async_issue_pending(host->dma_current);
 
@@ -692,8 +683,7 @@ static void mmci_get_next_data(struct mmci_host *host, struct mmc_data *data)
 	next->dma_chan = NULL;
 }
 
-static void mmci_pre_request(struct mmc_host *mmc, struct mmc_request *mrq,
-			     bool is_first_req)
+static void mmci_pre_request(struct mmc_host *mmc, struct mmc_request *mrq)
 {
 	struct mmci_host *host = mmc_priv(mmc);
 	struct mmc_data *data = mrq->data;
@@ -734,8 +724,10 @@ static void mmci_post_request(struct mmc_host *mmc, struct mmc_request *mrq,
 		if (host->dma_desc_current == next->dma_desc)
 			host->dma_desc_current = NULL;
 
-		if (host->dma_current == next->dma_chan)
+		if (host->dma_current == next->dma_chan) {
+			host->dma_in_progress = false;
 			host->dma_current = NULL;
+		}
 
 		next->dma_desc = NULL;
 		next->dma_chan = NULL;
@@ -1290,8 +1282,6 @@ static void mmci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		return;
 	}
 
-	pm_runtime_get_sync(mmc_dev(mmc));
-
 	spin_lock_irqsave(&host->lock, flags);
 
 	host->mrq = mrq;
@@ -1317,8 +1307,6 @@ static void mmci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	u32 pwr = 0;
 	unsigned long flags;
 	int ret;
-
-	pm_runtime_get_sync(mmc_dev(mmc));
 
 	if (host->plat->ios_handler &&
 		host->plat->ios_handler(mmc_dev(mmc), ios))
@@ -1414,9 +1402,6 @@ static void mmci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	mmci_reg_delay(host);
 
 	spin_unlock_irqrestore(&host->lock, flags);
-
-	pm_runtime_mark_last_busy(mmc_dev(mmc));
-	pm_runtime_put_autosuspend(mmc_dev(mmc));
 }
 
 static int mmci_get_cd(struct mmc_host *mmc)
@@ -1440,8 +1425,6 @@ static int mmci_sig_volt_switch(struct mmc_host *mmc, struct mmc_ios *ios)
 
 	if (!IS_ERR(mmc->supply.vqmmc)) {
 
-		pm_runtime_get_sync(mmc_dev(mmc));
-
 		switch (ios->signal_voltage) {
 		case MMC_SIGNAL_VOLTAGE_330:
 			ret = regulator_set_voltage(mmc->supply.vqmmc,
@@ -1459,9 +1442,6 @@ static int mmci_sig_volt_switch(struct mmc_host *mmc, struct mmc_ios *ios)
 
 		if (ret)
 			dev_warn(mmc_dev(mmc), "Voltage switch failed\n");
-
-		pm_runtime_mark_last_busy(mmc_dev(mmc));
-		pm_runtime_put_autosuspend(mmc_dev(mmc));
 	}
 
 	return ret;
@@ -1886,7 +1866,7 @@ static struct amba_id mmci_ids[] = {
 	{
 		.id     = 0x00280180,
 		.mask   = 0x00ffffff,
-		.data	= &variant_u300,
+		.data	= &variant_nomadik,
 	},
 	{
 		.id     = 0x00480180,

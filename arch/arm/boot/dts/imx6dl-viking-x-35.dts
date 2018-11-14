@@ -39,7 +39,11 @@
 			gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;
 			default-state = "on";
 		};
-
+		brickwall {
+			label = "brickwall";
+			gpios = <&gpio4 5 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
 	};
 
 	regulators {
@@ -217,6 +221,8 @@
 				MX6QDL_PAD_GPIO_6__GPIO1_IO06	0x000000b0
 				/* BALL R5 JX2_65 3.3v Green LED */
 				MX6QDL_PAD_GPIO_8__GPIO1_IO08	0x000000b0
+				/* BALL P5 JX2_52 3.3v Brickwall Filter */
+				MX6QDL_PAD_GPIO_19__GPIO4_IO05 0x000000b0
 				/* Camera */
 				/* BALL L1 JE1_44 1.8v Power Down */
 				MX6QDL_PAD_CSI0_DAT13__GPIO5_IO31 0x0000b0b0
@@ -310,7 +316,7 @@
 				/* BALL T2 JE1_35 1.8v In */	
 				MX6QDL_PAD_GPIO_9__GPIO1_IO09	0x80000000
 				/* BALL P5 JX2_52 3.3v In */
-				MX6QDL_PAD_GPIO_19__GPIO4_IO05	0x80000000
+				/* MX6QDL_PAD_GPIO_19__GPIO4_IO05	0x80000000 */
 				/* KEY MUX PADS */
 				/* BALL W6 JX2_19 3.3v In */
 				MX6QDL_PAD_KEY_COL2__GPIO4_IO10 0x0001b0b0

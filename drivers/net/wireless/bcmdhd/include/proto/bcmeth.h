@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmeth.h 382882 2013-02-04 23:24:31Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: bcmeth.h 518342 2014-12-01 23:21:41Z $
  */
 
 /*
@@ -89,7 +92,7 @@
  * within BCMILCP_BCM_SUBTYPE_EVENT type messages
  */
 /* #define BCMILCP_BCM_SUBTYPE_EAPOL		3 */
-#define BCMILCP_BCM_SUBTYPE_DPT			4
+#define BCMILCP_BCM_SUBTYPE_DPT                 4
 
 #define BCMILCP_BCM_SUBTYPEHDR_MINLENGTH	8
 #define BCMILCP_BCM_SUBTYPEHDR_VERSION		0

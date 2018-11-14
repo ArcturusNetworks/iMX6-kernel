@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: spid.h 358377 2012-09-23 11:30:22Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: spid.h 514727 2014-11-12 03:02:48Z $
  */
 
 #ifndef	_SPI_H

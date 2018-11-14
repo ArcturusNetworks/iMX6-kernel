@@ -26,7 +26,7 @@ config BLACKFIN
 	select HAVE_OPROFILE
 	select HAVE_PERF_EVENTS
 	select ARCH_HAVE_CUSTOM_GPIO_H
-	select ARCH_REQUIRE_GPIOLIB
+	select GPIOLIB
 	select HAVE_UID16
 	select HAVE_UNDERSCORE_SYMBOL_PREFIX
 	select VIRT_TO_BUS
@@ -40,6 +40,7 @@ config BLACKFIN
 	select HAVE_MOD_ARCH_SPECIFIC
 	select MODULES_USE_ELF_RELA
 	select HAVE_DEBUG_STACKOVERFLOW
+	select HAVE_NMI
 
 config GENERIC_CSUM
 	def_bool y
@@ -318,11 +319,14 @@ config BF53x
 
 config GPIO_ADI
 	def_bool y
+	depends on !PINCTRL
 	depends on (BF51x || BF52x || BF53x || BF538 || BF539 || BF561)
 
-config PINCTRL
+config PINCTRL_BLACKFIN_ADI2
 	def_bool y
-	depends on BF54x || BF60x
+	depends on (BF54x || BF60x)
+	select PINCTRL
+	select PINCTRL_ADI2
 
 config MEM_MT48LC64M4A2FB_7E
 	bool
@@ -1232,8 +1236,6 @@ config PCI
 source "drivers/pci/Kconfig"
 
 source "drivers/pcmcia/Kconfig"
-
-source "drivers/pci/hotplug/Kconfig"
 
 endmenu
 

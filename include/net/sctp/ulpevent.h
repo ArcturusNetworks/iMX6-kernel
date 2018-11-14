@@ -48,15 +48,15 @@
  */
 struct sctp_ulpevent {
 	struct sctp_association *asoc;
-	__u16 stream;
-	__u16 ssn;
-	__u16 flags;
+	struct sctp_chunk *chunk;
+	unsigned int rmem_len;
 	__u32 ppid;
 	__u32 tsn;
 	__u32 cumtsn;
-	int msg_flags;
-	int iif;
-	unsigned int rmem_len;
+	__u16 stream;
+	__u16 ssn;
+	__u16 flags;
+	__u16 msg_flags;
 };
 
 /* Retrieve the skb this event sits inside of. */
@@ -141,8 +141,12 @@ __u16 sctp_ulpevent_get_notification_type(const struct sctp_ulpevent *event);
 static inline int sctp_ulpevent_type_enabled(__u16 sn_type,
 					     struct sctp_event_subscribe *mask)
 {
+	int offset = sn_type - SCTP_SN_TYPE_BASE;
 	char *amask = (char *) mask;
-	return amask[sn_type - SCTP_SN_TYPE_BASE];
+
+	if (offset >= sizeof(struct sctp_event_subscribe))
+		return 0;
+	return amask[offset];
 }
 
 /* Given an event subscription, is this event enabled? */

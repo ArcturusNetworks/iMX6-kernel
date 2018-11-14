@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Technexion Ltd.
+ * Copyright 2018 Technexion Ltd.
  *
  * Author: Tapani Utriainen <tapani@technexion.com>
  *	   Richard Hu <richard.hu@technexion.com>
@@ -11,15 +11,10 @@
  */
 /dts-v1/;
 
-#include <dt-bindings/interrupt-controller/irq.h>
 #include "imx7d.dtsi"
 #include "imx7d-pico.dtsi"
 #include "baseboard_pico_dwarf.dtsi"
 / {
-	model = "Technexion PICO-IMX7 Dual/Solo with Dwarf baseboard";
-	compatible = "fsl,pico-cf-imx7d", "fsl,imx7d";
-};
-
-&epdc {
-	status = "disabled";
+	model = "TechNexion PICO-IMX7D and DWARF baseboard";
+	compatible = "fsl,pico-imx7d", "fsl,imx7d";
 };

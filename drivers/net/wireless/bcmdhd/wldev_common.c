@@ -21,7 +21,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wldev_common.c 540901 2015-03-13 11:50:58Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: wldev_common.c 585478 2015-09-10 13:33:58Z $
  */
 
 #include <osl.h>
@@ -31,6 +34,7 @@
 
 #include <wldev_common.h>
 #include <bcmutils.h>
+#include <dhd_config.h>
 
 #define htod32(i) (i)
 #define htod16(i) (i)
@@ -41,13 +45,18 @@
 
 #define	WLDEV_ERROR(args)						\
 	do {										\
-		printk(KERN_ERR "WLDEV-ERROR) %s : ", __func__);	\
+		printk(KERN_ERR "WLDEV-ERROR) ");	\
+		printk args;							\
+	} while (0)
+
+#define	WLDEV_INFO(args)						\
+	do {										\
+		printk(KERN_INFO "WLDEV-INFO) ");	\
 		printk args;							\
 	} while (0)
 
 extern int dhd_ioctl_entry_local(struct net_device *net, wl_ioctl_t *ioc, int cmd);
 
-#define MAX_NUM_OF_ASSOCLIST 64
 s32 wldev_ioctl(
 	struct net_device *dev, u32 cmd, void *arg, u32 len, u32 set)
 {
@@ -71,7 +80,7 @@ s32 wldev_ioctl(
  * wl_iw, wl_cfg80211 and wl_cfgp2p
  */
 static s32 wldev_mkiovar(
-	s8 *iovar_name, s8 *param, s32 paramlen,
+	const s8 *iovar_name, s8 *param, s32 paramlen,
 	s8 *iovar_buf, u32 buflen)
 {
 	s32 iolen = 0;
@@ -160,8 +169,8 @@ s32 wldev_mkiovar_bsscfg(
 	u32 iolen;
 
 	if (bssidx == 0) {
-		return wldev_mkiovar((s8*)iovar_name, (s8 *)param, paramlen,
-			(s8 *) iovar_buf, buflen);
+		return wldev_mkiovar(iovar_name, param, paramlen,
+			iovar_buf, buflen);
 	}
 
 	prefixlen = (u32) strlen(prefix); /* lengh of bsscfg prefix */
@@ -332,7 +341,6 @@ int wldev_set_band(
 	}
 	return error;
 }
-
 int wldev_get_datarate(struct net_device *dev, int *datarate)
 {
 	int error = 0;
@@ -347,6 +355,7 @@ int wldev_get_datarate(struct net_device *dev, int *datarate)
 	return error;
 }
 
+#ifdef WL_CFG80211
 extern chanspec_t
 wl_chspec_driver_to_host(chanspec_t chanspec);
 #define WL_EXTRA_BUF_MAX 2048
@@ -358,22 +367,14 @@ int wldev_get_mode(
 	uint16 band = 0;
 	uint16 bandwidth = 0;
 	wl_bss_info_t *bss = NULL;
-	char* buf = NULL;
-
-	buf = kmalloc(WL_EXTRA_BUF_MAX, GFP_KERNEL);
-
-	if (!buf) {
-		WLDEV_ERROR(("%s:NOMEM\n", __FUNCTION__));
-		return -ENOMEM;
-	}
-
+	char* buf = kmalloc(WL_EXTRA_BUF_MAX, GFP_KERNEL);
+	if (!buf)
+		return -1;
 	*(u32*) buf = htod32(WL_EXTRA_BUF_MAX);
 	error = wldev_ioctl(dev, WLC_GET_BSS_INFO, (void*)buf, WL_EXTRA_BUF_MAX, false);
 	if (error) {
 		WLDEV_ERROR(("%s:failed:%d\n", __FUNCTION__, error));
-		kfree(buf);
-		buf = NULL;
-		return error;
+		return -1;
 	}
 	bss = (struct  wl_bss_info *)(buf + 4);
 	chanspec = wl_chspec_driver_to_host(bss->chanspec);
@@ -400,31 +401,16 @@ int wldev_get_mode(
 				strcpy(cap, "a");
 		} else {
 			WLDEV_ERROR(("%s:Mode get failed\n", __FUNCTION__));
-			error = BCME_ERROR;
+			return -1;
 		}
 
 	}
-	kfree(buf);
-	buf = NULL;
 	return error;
 }
-#define MAX_NUM_OF_ASSOCLIST 64
-int wldev_get_assoclist(
-		struct net_device *dev, struct maclist  *assoc_maclist, uint length)
-{
-	int ret = 0;
-
-/* get the current list of associated STAs */
-	assoc_maclist->count = MAX_NUM_OF_ASSOCLIST;
-	if ((ret = wldev_ioctl(dev, WLC_GET_ASSOCLIST, assoc_maclist,
-		length, false)) != 0) {
-		return ret;
-	}
-	return 0;
-}
+#endif
 
 int wldev_set_country(
-	struct net_device *dev, char *country_code, bool notify, bool user_enforced)
+	struct net_device *dev, char *country_code, bool notify, bool user_enforced, int revinfo)
 {
 	int error = -1;
 	wl_country_t cspec = {{0}, 0, {0}};
@@ -442,7 +428,8 @@ int wldev_set_country(
 	}
 
 	if ((error < 0) ||
-	    (strncmp(country_code, cspec.country_abbrev, WLC_CNTRY_BUF_SZ) != 0)) {
+			dhd_force_country_change(dev) ||
+	    (strncmp(country_code, cspec.ccode, WLC_CNTRY_BUF_SZ) != 0)) {
 
 		if (user_enforced) {
 			bzero(&scbval, sizeof(scb_val_t));
@@ -454,10 +441,12 @@ int wldev_set_country(
 			}
 		}
 
-		cspec.rev = -1;
+		cspec.rev = revinfo;
 		memcpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
 		memcpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
-		dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
+		error = dhd_conf_get_country_from_config(dhd_get_pub(dev), &cspec);
+		if (error)
+			dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
 		error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
 			smbuf, sizeof(smbuf), NULL);
 		if (error < 0) {
@@ -465,9 +454,11 @@ int wldev_set_country(
 				__FUNCTION__, country_code, cspec.ccode, cspec.rev));
 			return error;
 		}
+		dhd_conf_fix_country(dhd_get_pub(dev));
+		dhd_conf_get_country(dhd_get_pub(dev), &cspec);
 		dhd_bus_country_set(dev, &cspec, notify);
-		WLDEV_ERROR(("%s: set country for %s as %s rev %d\n",
-			__FUNCTION__, country_code, cspec.ccode, cspec.rev));
+		printf("%s: set country for %s as %s rev %d\n",
+			__FUNCTION__, country_code, cspec.ccode, cspec.rev);
 	}
 	return 0;
 }

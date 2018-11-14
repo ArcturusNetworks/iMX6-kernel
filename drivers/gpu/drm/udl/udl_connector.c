@@ -105,7 +105,7 @@ static struct drm_encoder*
 udl_best_single_encoder(struct drm_connector *connector)
 {
 	int enc_id = connector->encoder_ids[0];
-	return drm_encoder_find(connector->dev, enc_id);
+	return drm_encoder_find(connector->dev, NULL, enc_id);
 }
 
 static int udl_connector_set_property(struct drm_connector *connector,
@@ -122,13 +122,13 @@ static void udl_connector_destroy(struct drm_connector *connector)
 	kfree(connector);
 }
 
-static struct drm_connector_helper_funcs udl_connector_helper_funcs = {
+static const struct drm_connector_helper_funcs udl_connector_helper_funcs = {
 	.get_modes = udl_get_modes,
 	.mode_valid = udl_mode_valid,
 	.best_encoder = udl_best_single_encoder,
 };
 
-static struct drm_connector_funcs udl_connector_funcs = {
+static const struct drm_connector_funcs udl_connector_funcs = {
 	.dpms = drm_helper_connector_dpms,
 	.detect = udl_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
@@ -150,8 +150,5 @@ int udl_connector_init(struct drm_device *dev, struct drm_encoder *encoder)
 	drm_connector_register(connector);
 	drm_mode_connector_attach_encoder(connector, encoder);
 
-	drm_object_attach_property(&connector->base,
-				      dev->mode_config.dirty_info_property,
-				      1);
 	return 0;
 }

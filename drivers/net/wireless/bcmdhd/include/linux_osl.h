@@ -21,13 +21,17 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: linux_osl.h 432719 2013-10-29 12:04:59Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: linux_osl.h 601764 2015-11-24 03:47:41Z $
  */
 
 #ifndef _linux_osl_h_
 #define _linux_osl_h_
 
 #include <typedefs.h>
+#define DECLSPEC_ALIGN(x)	__attribute__ ((aligned(x)))
 
 /* Linux Kernel: File Operations: start */
 extern void * osl_os_open_image(char * filename);
@@ -72,6 +76,11 @@ extern void osl_assert(const char *exp, const char *file, int line);
 	#endif /* __GNUC__ */
 #endif 
 
+/* bcm_prefetch_32B */
+static inline void bcm_prefetch_32B(const uint8 *addr, const int cachelines_32B)
+{
+}
+
 /* microsecond delay */
 #define	OSL_DELAY(usec)		osl_delay(usec)
 extern void osl_delay(uint usec);
@@ -97,18 +106,27 @@ extern void osl_pci_write_config(osl_t *osh, uint offset, uint size, uint val);
 /* PCI device bus # and slot # */
 #define OSL_PCI_BUS(osh)	osl_pci_bus(osh)
 #define OSL_PCI_SLOT(osh)	osl_pci_slot(osh)
+#define OSL_PCIE_DOMAIN(osh)	osl_pcie_domain(osh)
+#define OSL_PCIE_BUS(osh)	osl_pcie_bus(osh)
 extern uint osl_pci_bus(osl_t *osh);
 extern uint osl_pci_slot(osl_t *osh);
+extern uint osl_pcie_domain(osl_t *osh);
+extern uint osl_pcie_bus(osl_t *osh);
 extern struct pci_dev *osl_pci_device(osl_t *osh);
+
+#define OSL_ACP_COHERENCE		(1<<1L)
 
 /* Pkttag flag should be part of public information */
 typedef struct {
 	bool pkttag;
-	bool mmbus;		/* Bus supports memory-mapped register accesses */
-	pktfree_cb_fn_t tx_fn;  /* Callback function for PKTFREE */
-	void *tx_ctx;		/* Context to the callback function */
+	bool mmbus;		/**< Bus supports memory-mapped register accesses */
+	pktfree_cb_fn_t tx_fn;  /**< Callback function for PKTFREE */
+	void *tx_ctx;		/**< Context to the callback function */
 	void	*unused[3];
 } osl_pubinfo_t;
+
+extern void osl_flag_set(osl_t *osh, uint32 mask);
+extern bool osl_is_flag_set(osl_t *osh, uint32 mask);
 
 #define PKTFREESETCB(osh, _tx_fn, _tx_ctx)		\
 	do {						\
@@ -147,8 +165,8 @@ extern uint osl_malloc_failed(osl_t *osh);
 	osl_dma_free_consistent((osh), (void*)(va), (size), (pa))
 
 extern uint osl_dma_consistent_align(void);
-extern void *
-osl_dma_alloc_consistent(osl_t *osh, uint size, uint16 align, uint *tot, dmaaddr_t *pap);
+extern void *osl_dma_alloc_consistent(osl_t *osh, uint size, uint16 align,
+	uint *tot, dmaaddr_t *pap);
 extern void osl_dma_free_consistent(osl_t *osh, void *va, uint size, dmaaddr_t pa);
 
 /* map/unmap direction */
@@ -160,22 +178,42 @@ extern void osl_dma_free_consistent(osl_t *osh, void *va, uint size, dmaaddr_t p
 	osl_dma_unmap((osh), (pa), (size), (direction))
 extern dmaaddr_t osl_dma_map(osl_t *osh, void *va, uint size, int direction, void *p,
 	hnddma_seg_map_t *txp_dmah);
-extern void osl_dma_unmap(osl_t *osh, uint pa, uint size, int direction);
+extern void osl_dma_unmap(osl_t *osh, dmaaddr_t pa, uint size, int direction);
 
 /* API for DMA addressing capability */
 #define OSL_DMADDRWIDTH(osh, addrwidth) ({BCM_REFERENCE(osh); BCM_REFERENCE(addrwidth);})
 
-#if defined(__ARM_ARCH_7A__)
+#define OSL_SMP_WMB()	smp_wmb()
+
+/* API for CPU relax */
+extern void osl_cpu_relax(void);
+#define OSL_CPU_RELAX() osl_cpu_relax()
+
+#if (!defined(DHD_USE_COHERENT_MEM_FOR_RING) && defined(__ARM_ARCH_7A__)) || \
+	(defined(STBLINUX) && defined(__ARM_ARCH_7A__)) || (defined(CONFIG_ARCH_MSM8996) || \
+	defined(CONFIG_SOC_EXYNOS8890))
 	extern void osl_cache_flush(void *va, uint size);
 	extern void osl_cache_inv(void *va, uint size);
 	extern void osl_prefetch(const void *ptr);
 	#define OSL_CACHE_FLUSH(va, len)	osl_cache_flush((void *) va, len)
 	#define OSL_CACHE_INV(va, len)		osl_cache_inv((void *) va, len)
 	#define OSL_PREFETCH(ptr)			osl_prefetch(ptr)
+#ifdef __ARM_ARCH_7A__
+	extern int osl_arch_is_coherent(void);
+	#define OSL_ARCH_IS_COHERENT()		osl_arch_is_coherent()
+	extern int osl_acp_war_enab(void);
+	#define OSL_ACP_WAR_ENAB()			osl_acp_war_enab()
+#else
+	#define OSL_ARCH_IS_COHERENT()		NULL
+	#define OSL_ACP_WAR_ENAB()			NULL
+#endif /* __ARM_ARCH_7A__ */
 #else
 	#define OSL_CACHE_FLUSH(va, len)	BCM_REFERENCE(va)
 	#define OSL_CACHE_INV(va, len)		BCM_REFERENCE(va)
-	#define OSL_PREFETCH(ptr)			prefetch(ptr)
+	#define OSL_PREFETCH(ptr)		BCM_REFERENCE(ptr)
+
+	#define OSL_ARCH_IS_COHERENT()		NULL
+	#define OSL_ACP_WAR_ENAB()			NULL
 #endif 
 
 /* register access macros */
@@ -227,6 +265,27 @@ extern int osl_error(int bcmerror);
 
 /* register access macros */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 1)) && defined(CONFIG_64BIT) && \
+	defined(CONFIG_X86)
+#define R_REG(osh, r) (\
+	SELECT_BUS_READ(osh, \
+		({ \
+			__typeof(*(r)) __osl_v; \
+			switch (sizeof(*(r))) { \
+				case sizeof(uint8):	__osl_v = \
+					readb((volatile uint8*)(r)); break; \
+				case sizeof(uint16):	__osl_v = \
+					readw((volatile uint16*)(r)); break; \
+				case sizeof(uint32):	__osl_v = \
+					readl((volatile uint32*)(r)); break; \
+				case sizeof(uint64):	__osl_v = \
+					readq((volatile uint64*)(r)); break;  \
+			} \
+			__osl_v; \
+		}), \
+		OSL_READ_REG(osh, r)) \
+)
+#else
 #define R_REG(osh, r) (\
 	SELECT_BUS_READ(osh, \
 		({ \
@@ -243,7 +302,20 @@ extern int osl_error(int bcmerror);
 		}), \
 		OSL_READ_REG(osh, r)) \
 )
-
+#endif /* KERNEL_VERSION(3, 11, 1)) && defined(CONFIG_64BIT) && defined(CONFIG_X86) */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 1)) && defined(CONFIG_64BIT) && \
+	defined(CONFIG_X86)
+#define W_REG(osh, r, v) do { \
+	SELECT_BUS_WRITE(osh, \
+		switch (sizeof(*(r))) { \
+			case sizeof(uint8):	writeb((uint8)(v), (volatile uint8*)(r)); break; \
+			case sizeof(uint16):	writew((uint16)(v), (volatile uint16*)(r)); break; \
+			case sizeof(uint32):	writel((uint32)(v), (volatile uint32*)(r)); break; \
+			case sizeof(uint64):	writeq((uint64)(v), (volatile uint64*)(r)); break; \
+		}, \
+		(OSL_WRITE_REG(osh, r, v))); \
+	} while (0)
+#else
 #define W_REG(osh, r, v) do { \
 	SELECT_BUS_WRITE(osh, \
 		switch (sizeof(*(r))) { \
@@ -253,6 +325,7 @@ extern int osl_error(int bcmerror);
 		}, \
 		(OSL_WRITE_REG(osh, r, v))); \
 	} while (0)
+#endif  /* KERNEL_VERSION(3, 11, 1)) && defined(CONFIG_64BIT) && defined(CONFIG_X86) */
 
 #define	AND_REG(osh, r, v)		W_REG(osh, (r), R_REG(osh, r) & (v))
 #define	OR_REG(osh, r, v)		W_REG(osh, (r), R_REG(osh, r) | (v))
@@ -302,12 +375,21 @@ extern int osl_error(int bcmerror);
 #define	PKTGET(osh, len, send)		osl_pktget((osh), (len), __LINE__, __FILE__)
 #define	PKTDUP(osh, skb)		osl_pktdup((osh), (skb), __LINE__, __FILE__)
 #else
+#ifdef BCM_OBJECT_TRACE
+#define	PKTGET(osh, len, send)		osl_pktget((osh), (len), __LINE__, __FUNCTION__)
+#define	PKTDUP(osh, skb)		osl_pktdup((osh), (skb), __LINE__, __FUNCTION__)
+#else
 #define	PKTGET(osh, len, send)		osl_pktget((osh), (len))
 #define	PKTDUP(osh, skb)		osl_pktdup((osh), (skb))
+#endif /* BCM_OBJECT_TRACE */
 #endif /* BCMDBG_CTRACE */
 #define PKTLIST_DUMP(osh, buf)		BCM_REFERENCE(osh)
 #define PKTDBG_TRACE(osh, pkt, bit)	BCM_REFERENCE(osh)
+#if defined(BCM_OBJECT_TRACE)
+#define	PKTFREE(osh, skb, send)		osl_pktfree((osh), (skb), (send), __LINE__, __FUNCTION__)
+#else
 #define	PKTFREE(osh, skb, send)		osl_pktfree((osh), (skb), (send))
+#endif /* BCM_OBJECT_TRACE */
 #ifdef CONFIG_DHD_USE_STATIC_BUF
 #define	PKTGET_STATIC(osh, len, send)		osl_pktget_static((osh), (len))
 #define	PKTFREE_STATIC(osh, skb, send)		osl_pktfree_static((osh), (skb), (send))
@@ -363,6 +445,13 @@ extern int osl_error(int bcmerror);
 #define PKTID(skb)              ({BCM_REFERENCE(skb); 0;})
 #define PKTSETID(skb, id)       ({BCM_REFERENCE(skb); BCM_REFERENCE(id);})
 #define PKTSHRINK(osh, m)		({BCM_REFERENCE(osh); m;})
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)) && defined(TSQ_MULTIPLIER)
+#define PKTORPHAN(skb, tsq)          osl_pkt_orphan_partial(skb, tsq)
+extern void osl_pkt_orphan_partial(struct sk_buff *skb, int tsq);
+#else
+#define PKTORPHAN(skb, tsq)          ({BCM_REFERENCE(skb); 0;})
+#endif /* LINUX VERSION >= 3.6 */
+
 
 #ifdef BCMDBG_CTRACE
 #define	DEL_CTRACE(zosh, zskb) { \
@@ -473,7 +562,7 @@ typedef struct ctfpool {
 #define	PKTFAST(osh, skb)	(((struct sk_buff*)(skb))->__unused)
 #endif /* 2.6.22 */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
 #define	CTFPOOLPTR(osh, skb)	(((struct sk_buff*)(skb))->ctfpool)
 #define	CTFPOOLHEAD(osh, skb)	(((ctfpool_t *)((struct sk_buff*)(skb))->ctfpool)->head)
 #else
@@ -597,6 +686,152 @@ typedef struct ctf_mark {
 #define CTF_MARK(m)		({BCM_REFERENCE(m); 0;})
 #endif /* HNDCTF */
 
+#if defined(BCM_GMAC3)
+
+/** pktalloced accounting in devices using GMAC Bulk Forwarding to DHD */
+
+/* Account for packets delivered to downstream forwarder by GMAC interface. */
+extern void osl_pkt_tofwder(osl_t *osh, void *skbs, int skb_cnt);
+#define PKTTOFWDER(osh, skbs, skb_cnt)  \
+	osl_pkt_tofwder(((osl_t *)osh), (void *)(skbs), (skb_cnt))
+
+/* Account for packets received from downstream forwarder. */
+#if defined(BCMDBG_CTRACE) /* pkt logging */
+extern void osl_pkt_frmfwder(osl_t *osh, void *skbs, int skb_cnt,
+                             int line, char *file);
+#define PKTFRMFWDER(osh, skbs, skb_cnt) \
+	osl_pkt_frmfwder(((osl_t *)osh), (void *)(skbs), (skb_cnt), \
+	                 __LINE__, __FILE__)
+#else  /* ! (BCMDBG_PKT || BCMDBG_CTRACE) */
+extern void osl_pkt_frmfwder(osl_t *osh, void *skbs, int skb_cnt);
+#define PKTFRMFWDER(osh, skbs, skb_cnt) \
+	osl_pkt_frmfwder(((osl_t *)osh), (void *)(skbs), (skb_cnt))
+#endif 
+
+
+/** GMAC Forwarded packet tagging for reduced cache flush/invalidate.
+ * In FWDERBUF tagged packet, only FWDER_PKTMAPSZ amount of data would have
+ * been accessed in the GMAC forwarder. This may be used to limit the number of
+ * cachelines that need to be flushed or invalidated.
+ * Packets sent to the DHD from a GMAC forwarder will be tagged w/ FWDERBUF.
+ * DHD may clear the FWDERBUF tag, if more than FWDER_PKTMAPSZ was accessed.
+ * Likewise, a debug print of a packet payload in say the ethernet driver needs
+ * to be accompanied with a clear of the FWDERBUF tag.
+ */
+
+/** Forwarded packets, have a HWRXOFF sized rx header (etc.h) */
+#define FWDER_HWRXOFF       (30)
+
+/** Maximum amount of a pktadat that a downstream forwarder (GMAC) may have
+ * read into the L1 cache (not dirty). This may be used in reduced cache ops.
+ *
+ * Max 56: ET HWRXOFF[30] + BRCMHdr[4] + EtherHdr[14] + VlanHdr[4] + IP[4]
+ */
+#define FWDER_PKTMAPSZ      (FWDER_HWRXOFF + 4 + 14 + 4 + 4)
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36)
+
+#define FWDERBUF            (1 << 4)
+#define PKTSETFWDERBUF(osh, skb) \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->pktc_flags |= FWDERBUF); \
+	 })
+#define PKTCLRFWDERBUF(osh, skb) \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->pktc_flags &= (~FWDERBUF)); \
+	 })
+#define PKTISFWDERBUF(osh, skb) \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->pktc_flags & FWDERBUF); \
+	 })
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
+
+#define FWDERBUF	        (1 << 20)
+#define PKTSETFWDERBUF(osh, skb) \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->mac_len |= FWDERBUF); \
+	 })
+#define PKTCLRFWDERBUF(osh, skb)  \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->mac_len &= (~FWDERBUF)); \
+	 })
+#define PKTISFWDERBUF(osh, skb) \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->mac_len & FWDERBUF); \
+	 })
+
+#else /* 2.6.22 */
+
+#define FWDERBUF            (1 << 4)
+#define PKTSETFWDERBUF(osh, skb)  \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->__unused |= FWDERBUF); \
+	 })
+#define PKTCLRFWDERBUF(osh, skb)  \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->__unused &= (~FWDERBUF)); \
+	 })
+#define PKTISFWDERBUF(osh, skb) \
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->__unused & FWDERBUF); \
+	 })
+
+#endif /* 2.6.22 */
+
+#else  /* ! BCM_GMAC3 */
+
+#define PKTSETFWDERBUF(osh, skb)  ({ BCM_REFERENCE(osh); BCM_REFERENCE(skb); })
+#define PKTCLRFWDERBUF(osh, skb)  ({ BCM_REFERENCE(osh); BCM_REFERENCE(skb); })
+#define PKTISFWDERBUF(osh, skb)   ({ BCM_REFERENCE(osh); BCM_REFERENCE(skb); FALSE;})
+
+#endif /* ! BCM_GMAC3 */
+
+
+#ifdef HNDCTF
+/* For broadstream iqos */
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36)
+#define	TOBR		(1 << 5)
+#define	PKTSETTOBR(osh, skb)	\
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->pktc_flags |= TOBR); \
+	 })
+#define	PKTCLRTOBR(osh, skb)	\
+	({ \
+	 BCM_REFERENCE(osh); \
+	 (((struct sk_buff*)(skb))->pktc_flags &= (~TOBR)); \
+	 })
+#define	PKTISTOBR(skb)	(((struct sk_buff*)(skb))->pktc_flags & TOBR)
+#define	PKTSETCTFIPCTXIF(skb, ifp)	(((struct sk_buff*)(skb))->ctf_ipc_txif = ifp)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
+#define	PKTSETTOBR(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTCLRTOBR(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTISTOBR(skb)	({BCM_REFERENCE(skb); FALSE;})
+#define	PKTSETCTFIPCTXIF(skb, ifp)	({BCM_REFERENCE(skb); BCM_REFERENCE(ifp);})
+#else /* 2.6.22 */
+#define	PKTSETTOBR(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTCLRTOBR(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTISTOBR(skb)	({BCM_REFERENCE(skb); FALSE;})
+#define	PKTSETCTFIPCTXIF(skb, ifp)	({BCM_REFERENCE(skb); BCM_REFERENCE(ifp);})
+#endif /* 2.6.22 */
+#else /* HNDCTF */
+#define	PKTSETTOBR(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTCLRTOBR(osh, skb)	({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
+#define	PKTISTOBR(skb)	({BCM_REFERENCE(skb); FALSE;})
+#endif /* HNDCTF */
+
+
 #ifdef BCMFA
 #ifdef BCMFA_HW_HASH
 #define PKTSETFAHIDX(skb, idx)	(((struct sk_buff*)(skb))->napt_idx = idx)
@@ -626,9 +861,14 @@ typedef struct ctf_mark {
 #define	PKTCLRFAFREED(skb)	BCM_REFERENCE(skb)
 #endif /* BCMFA */
 
+#if defined(BCM_OBJECT_TRACE)
+extern void osl_pktfree(osl_t *osh, void *skb, bool send, int line, const char *caller);
+#else
 extern void osl_pktfree(osl_t *osh, void *skb, bool send);
+#endif /* BCM_OBJECT_TRACE */
 extern void *osl_pktget_static(osl_t *osh, uint len);
 extern void osl_pktfree_static(osl_t *osh, void *skb, bool send);
+extern void osl_pktclone(osl_t *osh, void **pkt);
 
 #ifdef BCMDBG_CTRACE
 #define PKT_CTRACE_DUMP(osh, b)	osl_ctrace_dump((osh), (b))
@@ -639,9 +879,14 @@ extern void *osl_pktdup(osl_t *osh, void *skb, int line, char *file);
 struct bcmstrbuf;
 extern void osl_ctrace_dump(osl_t *osh, struct bcmstrbuf *b);
 #else
-extern void *osl_pkt_frmnative(osl_t *osh, void *skb);
+#ifdef BCM_OBJECT_TRACE
+extern void *osl_pktget(osl_t *osh, uint len, int line, const char *caller);
+extern void *osl_pktdup(osl_t *osh, void *skb, int line, const char *caller);
+#else
 extern void *osl_pktget(osl_t *osh, uint len);
 extern void *osl_pktdup(osl_t *osh, void *skb);
+#endif /* BCM_OBJECT_TRACE */
+extern void *osl_pkt_frmnative(osl_t *osh, void *skb);
 #endif /* BCMDBG_CTRACE */
 extern struct sk_buff *osl_pkt_tonative(osl_t *osh, void *pkt);
 #ifdef BCMDBG_CTRACE
@@ -678,6 +923,9 @@ extern struct sk_buff *osl_pkt_tonative(osl_t *osh, void *pkt);
 
 #define PKTALLOCED(osh)		osl_pktalloced(osh)
 extern uint osl_pktalloced(osl_t *osh);
+
+#define OSL_RAND()		osl_rand()
+extern uint32 osl_rand(void);
 
 #define	DMA_MAP(osh, va, size, direction, p, dmah) \
 	osl_dma_map((osh), (va), (size), (direction), (p), (dmah))
@@ -759,5 +1007,82 @@ extern void bcopy(const void *src, void *dst, size_t len);
 extern int bcmp(const void *b1, const void *b2, size_t len);
 extern void bzero(void *b, size_t len);
 #endif /* ! BCMDRIVER */
+
+typedef struct sec_cma_info {
+	struct sec_mem_elem *sec_alloc_list;
+	struct sec_mem_elem *sec_alloc_list_tail;
+} sec_cma_info_t;
+
+/* Current STB 7445D1 doesn't use ACP and it is non-coherrent.
+ * Adding these dummy values for build apss only
+ * When we revisit need to change these.
+ */
+#if defined(STBLINUX)
+
+#if defined(__ARM_ARCH_7A__)
+#define ACP_WAR_ENAB() 0
+#define ACP_WIN_LIMIT 1
+#define arch_is_coherent() 0
+#endif /* __ARM_ARCH_7A__ */
+
+#endif /* STBLINUX */
+
+#ifdef BCM_SECURE_DMA
+
+#define	SECURE_DMA_MAP(osh, va, size, direction, p, dmah, pcma, offset) \
+	osl_sec_dma_map((osh), (va), (size), (direction), (p), (dmah), (pcma), (offset))
+#define	SECURE_DMA_DD_MAP(osh, va, size, direction, p, dmah) \
+	osl_sec_dma_dd_map((osh), (va), (size), (direction), (p), (dmah))
+#define	SECURE_DMA_MAP_TXMETA(osh, va, size, direction, p, dmah, pcma) \
+	osl_sec_dma_map_txmeta((osh), (va), (size), (direction), (p), (dmah), (pcma))
+#define	SECURE_DMA_UNMAP(osh, pa, size, direction, p, dmah, pcma, offset) \
+	osl_sec_dma_unmap((osh), (pa), (size), (direction), (p), (dmah), (pcma), (offset))
+#define	SECURE_DMA_UNMAP_ALL(osh, pcma) \
+	osl_sec_dma_unmap_all((osh), (pcma))
+#if defined(__ARM_ARCH_7A__)
+#define CMA_BUFSIZE_4K	4096
+#define CMA_BUFSIZE_2K	2048
+#define CMA_BUFSIZE_512	512
+
+#define	CMA_BUFNUM		2048
+#define SEC_CMA_COHERENT_BLK 0x8000 /* 32768 */
+#define SEC_CMA_COHERENT_MAX 32
+#define CMA_DMA_DESC_MEMBLOCK	(SEC_CMA_COHERENT_BLK * SEC_CMA_COHERENT_MAX)
+#define CMA_DMA_DATA_MEMBLOCK	(CMA_BUFSIZE_4K*CMA_BUFNUM)
+#define	CMA_MEMBLOCK		(CMA_DMA_DESC_MEMBLOCK + CMA_DMA_DATA_MEMBLOCK)
+#define CONT_ARMREGION	0x02		/* Region CMA */
+#else
+#define CONT_MIPREGION	0x00		/* To access the MIPs mem, Not yet... */
+#endif /* !defined __ARM_ARCH_7A__ */
+
+#define SEC_DMA_ALIGN	(1<<16)
+typedef struct sec_mem_elem {
+	size_t			size;
+	int				direction;
+	phys_addr_t		pa_cma;     /**< physical  address */
+	void			*va;        /**< virtual address of driver pkt */
+	dma_addr_t		dma_handle; /**< bus address assign by linux */
+	void			*vac;       /**< virtual address of cma buffer */
+	struct	sec_mem_elem	*next;
+} sec_mem_elem_t;
+
+extern dma_addr_t osl_sec_dma_map(osl_t *osh, void *va, uint size, int direction, void *p,
+	hnddma_seg_map_t *dmah, void *ptr_cma_info, uint offset);
+extern dma_addr_t osl_sec_dma_dd_map(osl_t *osh, void *va, uint size, int direction, void *p,
+	hnddma_seg_map_t *dmah);
+extern dma_addr_t osl_sec_dma_map_txmeta(osl_t *osh, void *va, uint size,
+  int direction, void *p, hnddma_seg_map_t *dmah, void *ptr_cma_info);
+extern void osl_sec_dma_unmap(osl_t *osh, dma_addr_t dma_handle, uint size, int direction,
+	void *p, hnddma_seg_map_t *map, void *ptr_cma_info, uint offset);
+extern void osl_sec_dma_unmap_all(osl_t *osh, void *ptr_cma_info);
+
+#endif /* BCM_SECURE_DMA */
+
+typedef struct sk_buff_head PKT_LIST;
+#define PKTLIST_INIT(x)		skb_queue_head_init((x))
+#define PKTLIST_ENQ(x, y)	skb_queue_head((struct sk_buff_head *)(x), (struct sk_buff *)(y))
+#define PKTLIST_DEQ(x)		skb_dequeue((struct sk_buff_head *)(x))
+#define PKTLIST_UNLINK(x, y)	skb_unlink((struct sk_buff *)(y), (struct sk_buff_head *)(x))
+#define PKTLIST_FINI(x)		skb_queue_purge((struct sk_buff_head *)(x))
 
 #endif	/* _linux_osl_h_ */

@@ -4,32 +4,32 @@
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *
- * Dirty Macro hacks for splitting gpio definitions to bank and number 
+ * Dirty Macro hacks for splitting gpio definitions to bank and number
  *
  * Copyright 2016 Technexion Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- *  
+ *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
 
  Usage:
    Provides macros that can split a gpio definition to bank and number.
 
    Define gpios with bank and number:
-   
+
    #define EDM_GPIO gpio2 11
-   
+
    then this can be defined as gpio with (for example with)
 
    gpio=<&EDM_GPIO 0>;
-   
+
    and as interrupt as
 
    interrupt-parent = < &GPIO_BANK(EDM_GPIO) >;
    interrupts = < GPIO_NO(EDM_GPIO) 0 >;
-   
+
 */
 
 #define TN_LPAREN (
@@ -50,6 +50,7 @@
 #define TN_SPLIT_gpio5 TN_LPAREN gpio5 TN_COMMA
 #define TN_SPLIT_gpio6 TN_LPAREN gpio6 TN_COMMA
 #define TN_SPLIT_gpio7 TN_LPAREN gpio7 TN_COMMA
+#define TN_SPLIT_pca9554 TN_LPAREN pca9554 TN_COMMA
 
 #define TN_FIRST(a, b) a
 #define TN_SECOND(a, b) b

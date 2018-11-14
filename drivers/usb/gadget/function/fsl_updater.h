@@ -1,8 +1,9 @@
 /*
  * Freescale UUT driver
  *
- * Copyright 2008-2014 Freescale Semiconductor, Inc.
+ * Copyright 2008-2016 Freescale Semiconductor, Inc.
  * Copyright 2008-2009 Embedded Alley Solutions, Inc All Rights Reserved.
+ * Copyright 2017 NXP
  */
 
 /*
@@ -22,6 +23,7 @@
 #include <linux/vmalloc.h>
 #include <linux/ioctl.h>
 /* #include <mach/hardware.h> */
+struct utp_context;
 
 static int utp_init(struct fsg_dev *fsg);
 static void utp_exit(struct fsg_dev *fsg);
@@ -35,10 +37,11 @@ static ssize_t utp_file_write(struct file *file,
 			      size_t size,
 			      loff_t *off);
 
+static bool is_utp_device(struct fsg_dev *fsg);
 static long utp_ioctl(struct file *file,
 	      unsigned int cmd, unsigned long arg);
 static struct utp_user_data *utp_user_data_alloc(size_t size);
-static void utp_user_data_free(struct utp_user_data *uud);
+static void utp_user_data_free(struct utp_context *utp, struct utp_user_data *uud);
 static int utp_get_sense(struct fsg_dev *fsg);
 static int utp_do_read(struct fsg_dev *fsg, void *data, size_t size);
 static int utp_do_write(struct fsg_dev *fsg, void *data, size_t size);
@@ -55,6 +58,9 @@ static int utp_handle_message(struct fsg_dev *fsg,
 
 #define UTP_MINOR		222
 /* MISC_DYNAMIC_MINOR would be better, but... */
+
+#define UTP_IDVENDOR		0x066F
+#define UTP_IDPRODUCT		0x37FF
 
 #define UTP_COMMAND_SIZE	80
 
@@ -87,7 +93,7 @@ enum utp_msg_type {
 	UTP_PUT,
 };
 
-static struct utp_context {
+struct utp_context {
 	wait_queue_head_t wq;
 	wait_queue_head_t list_full_wq;
 	struct mutex lock;
@@ -99,7 +105,9 @@ static struct utp_context {
 	u32 counter;
 	u64 utp_version;
 	u32 cur_state;
-} utp_context;
+	struct miscdevice utp_dev;
+	char utp_name[8];
+};
 
 static const struct file_operations utp_fops = {
 	.open	= nonseekable_open,
@@ -107,12 +115,6 @@ static const struct file_operations utp_fops = {
 	.write	= utp_file_write,
 	/* .ioctl  = utp_ioctl, */
 	.unlocked_ioctl  = utp_ioctl,
-};
-
-static struct miscdevice utp_dev = {
-	.minor	= UTP_MINOR,
-	.name	= "utp",
-	.fops	= &utp_fops,
 };
 
 #define UTP_FLAG_COMMAND	0x00000001

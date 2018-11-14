@@ -1,14 +1,17 @@
 /*
  * caam descriptor construction helper functions
  *
- * Copyright 2008-2012 Freescale Semiconductor, Inc.
+ * Copyright 2008-2016 Freescale Semiconductor, Inc.
+ * Copyright 2017 NXP
  */
 
 #include "desc.h"
+#include "regs.h"
 
 #define IMMEDIATE (1 << 23)
 #define CAAM_CMD_SZ sizeof(u32)
-#define CAAM_PTR_SZ sizeof(dma_addr_t)
+/* CAAM Pointer Size in MCFGR[PS] is 0 by default (32bits) */
+#define CAAM_PTR_SZ sizeof(u32)
 #define CAAM_DESC_BYTES_MAX (CAAM_CMD_SZ * MAX_CAAM_DESCSIZE)
 #define DESC_JOB_IO_LEN (CAAM_CMD_SZ * 5 + CAAM_PTR_SZ * 3)
 
@@ -30,9 +33,11 @@
 			       LDST_SRCDST_WORD_DECOCTRL | \
 			       (LDOFF_ENABLE_AUTO_NFIFO << LDST_OFFSET_SHIFT))
 
+extern bool caam_little_end;
+
 static inline int desc_len(u32 *desc)
 {
-	return *desc & HDR_DESCLEN_MASK;
+	return caam32_to_cpu(*desc) & HDR_DESCLEN_MASK;
 }
 
 static inline int desc_bytes(void *desc)
@@ -52,7 +57,7 @@ static inline void *sh_desc_pdb(u32 *desc)
 
 static inline void init_desc(u32 *desc, u32 options)
 {
-	*desc = (options | HDR_ONE) + 1;
+	*desc = cpu_to_caam32((options | HDR_ONE) + 1);
 }
 
 static inline void init_sh_desc(u32 *desc, u32 options)
@@ -74,16 +79,24 @@ static inline void init_job_desc(u32 *desc, u32 options)
 	init_desc(desc, CMD_DESC_HDR | options);
 }
 
-static inline void append_ptr(u32 *desc, dma_addr_t ptr)
+static inline void init_job_desc_pdb(u32 *desc, u32 options, size_t pdb_bytes)
 {
-	dma_addr_t *offset = (dma_addr_t *)desc_end(desc);
+	u32 pdb_len = (pdb_bytes + CAAM_CMD_SZ - 1) / CAAM_CMD_SZ;
 
-	*offset = ptr;
-
-	(*desc) += CAAM_PTR_SZ / CAAM_CMD_SZ;
+	init_job_desc(desc, (((pdb_len + 1) << HDR_START_IDX_SHIFT)) | options);
 }
 
-static inline void init_job_desc_shared(u32 *desc, dma_addr_t ptr, int len,
+static inline void append_ptr(u32 *desc, u32 ptr)
+{
+	u32 *offset = (u32 *)desc_end(desc);
+
+	*offset = cpu_to_caam_dma(ptr);
+
+	(*desc) = cpu_to_caam32(caam32_to_cpu(*desc) +
+				CAAM_PTR_SZ / CAAM_CMD_SZ);
+}
+
+static inline void init_job_desc_shared(u32 *desc, u32 ptr, int len,
 					u32 options)
 {
 	PRINT_POS;
@@ -99,16 +112,17 @@ static inline void append_data(u32 *desc, void *data, int len)
 	if (len) /* avoid sparse warning: memcpy with byte count of 0 */
 		memcpy(offset, data, len);
 
-	(*desc) += (len + CAAM_CMD_SZ - 1) / CAAM_CMD_SZ;
+	(*desc) = cpu_to_caam32(caam32_to_cpu(*desc) +
+				(len + CAAM_CMD_SZ - 1) / CAAM_CMD_SZ);
 }
 
 static inline void append_cmd(u32 *desc, u32 command)
 {
 	u32 *cmd = desc_end(desc);
 
-	*cmd = command;
+	*cmd = cpu_to_caam32(command);
 
-	(*desc)++;
+	(*desc) = cpu_to_caam32(caam32_to_cpu(*desc) + 1);
 }
 
 #define append_u32 append_cmd
@@ -117,21 +131,27 @@ static inline void append_u64(u32 *desc, u64 data)
 {
 	u32 *offset = desc_end(desc);
 
-	*offset = upper_32_bits(data);
-	*(++offset) = lower_32_bits(data);
+	/* Only 32-bit alignment is guaranteed in descriptor buffer */
+	if (caam_little_end) {
+		*offset = cpu_to_caam32(lower_32_bits(data));
+		*(++offset) = cpu_to_caam32(upper_32_bits(data));
+	} else {
+		*offset = cpu_to_caam32(upper_32_bits(data));
+		*(++offset) = cpu_to_caam32(lower_32_bits(data));
+	}
 
-	(*desc) += 2;
+	(*desc) = cpu_to_caam32(caam32_to_cpu(*desc) + 2);
 }
 
 /* Write command without affecting header, and return pointer to next word */
 static inline u32 *write_cmd(u32 *desc, u32 command)
 {
-	*desc = command;
+	*desc = cpu_to_caam32(command);
 
 	return desc + 1;
 }
 
-static inline void append_cmd_ptr(u32 *desc, dma_addr_t ptr, int len,
+static inline void append_cmd_ptr(u32 *desc, u32 ptr, int len,
 				  u32 command)
 {
 	append_cmd(desc, command | len);
@@ -139,7 +159,7 @@ static inline void append_cmd_ptr(u32 *desc, dma_addr_t ptr, int len,
 }
 
 /* Write length after pointer, rather than inside command */
-static inline void append_cmd_ptr_extlen(u32 *desc, dma_addr_t ptr,
+static inline void append_cmd_ptr_extlen(u32 *desc, u32 ptr,
 					 unsigned int len, u32 command)
 {
 	append_cmd(desc, command);
@@ -168,14 +188,17 @@ APPEND_CMD_RET(move, MOVE)
 
 static inline void set_jump_tgt_here(u32 *desc, u32 *jump_cmd)
 {
-	*jump_cmd = *jump_cmd | (desc_len(desc) - (jump_cmd - desc));
+	*jump_cmd = cpu_to_caam32(caam32_to_cpu(*jump_cmd) |
+				  (desc_len(desc) - (jump_cmd - desc)));
 }
 
 static inline void set_move_tgt_here(u32 *desc, u32 *move_cmd)
 {
-	*move_cmd &= ~MOVE_OFFSET_MASK;
-	*move_cmd = *move_cmd | ((desc_len(desc) << (MOVE_OFFSET_SHIFT + 2)) &
-				 MOVE_OFFSET_MASK);
+	u32 val = caam32_to_cpu(*move_cmd);
+
+	val &= ~MOVE_OFFSET_MASK;
+	val |= (desc_len(desc) << (MOVE_OFFSET_SHIFT + 2)) & MOVE_OFFSET_MASK;
+	*move_cmd = cpu_to_caam32(val);
 }
 
 #define APPEND_CMD(cmd, op) \
@@ -199,7 +222,7 @@ APPEND_CMD_LEN(seq_fifo_load, SEQ_FIFO_LOAD)
 APPEND_CMD_LEN(seq_fifo_store, SEQ_FIFO_STORE)
 
 #define APPEND_CMD_PTR(cmd, op) \
-static inline void append_##cmd(u32 *desc, dma_addr_t ptr, unsigned int len, \
+static inline void append_##cmd(u32 *desc, u32 ptr, unsigned int len, \
 				u32 options) \
 { \
 	PRINT_POS; \
@@ -210,7 +233,7 @@ APPEND_CMD_PTR(load, LOAD)
 APPEND_CMD_PTR(fifo_load, FIFO_LOAD)
 APPEND_CMD_PTR(fifo_store, FIFO_STORE)
 
-static inline void append_store(u32 *desc, dma_addr_t ptr, unsigned int len,
+static inline void append_store(u32 *desc, u32 ptr, unsigned int len,
 				u32 options)
 {
 	u32 cmd_src;
@@ -228,7 +251,7 @@ static inline void append_store(u32 *desc, dma_addr_t ptr, unsigned int len,
 }
 
 #define APPEND_SEQ_PTR_INTLEN(cmd, op) \
-static inline void append_seq_##cmd##_ptr_intlen(u32 *desc, dma_addr_t ptr, \
+static inline void append_seq_##cmd##_ptr_intlen(u32 *desc, u32 ptr, \
 						 unsigned int len, \
 						 u32 options) \
 { \
@@ -252,7 +275,7 @@ APPEND_CMD_PTR_TO_IMM(load, LOAD);
 APPEND_CMD_PTR_TO_IMM(fifo_load, FIFO_LOAD);
 
 #define APPEND_CMD_PTR_EXTLEN(cmd, op) \
-static inline void append_##cmd##_extlen(u32 *desc, dma_addr_t ptr, \
+static inline void append_##cmd##_extlen(u32 *desc, u32 ptr, \
 					 unsigned int len, u32 options) \
 { \
 	PRINT_POS; \
@@ -266,7 +289,7 @@ APPEND_CMD_PTR_EXTLEN(seq_out_ptr, SEQ_OUT_PTR)
  * the size of its type
  */
 #define APPEND_CMD_PTR_LEN(cmd, op, type) \
-static inline void append_##cmd(u32 *desc, dma_addr_t ptr, \
+static inline void append_##cmd(u32 *desc, u32 ptr, \
 				type len, u32 options) \
 { \
 	PRINT_POS; \
@@ -302,6 +325,23 @@ static inline void append_##cmd##_imm_##type(u32 *desc, type immediate, \
 	append_cmd(desc, immediate); \
 }
 APPEND_CMD_RAW_IMM(load, LOAD, u32);
+
+/*
+ * ee - endianness
+ * size - size of immediate type in bytes
+ */
+#define APPEND_CMD_RAW_IMM2(cmd, op, ee, size) \
+static inline void append_##cmd##_imm_##ee##size(u32 *desc, \
+						   u##size immediate, \
+						   u32 options) \
+{ \
+	__##ee##size data = cpu_to_##ee##size(immediate); \
+	PRINT_POS; \
+	append_cmd(desc, CMD_##op | IMMEDIATE | options | sizeof(data)); \
+	append_data(desc, &data, sizeof(data)); \
+}
+
+APPEND_CMD_RAW_IMM2(load, LOAD, be, 32);
 
 /*
  * Append math command. Only the last part of destination and source need to
@@ -367,7 +407,7 @@ do { \
 	if (upper) \
 		append_u64(desc, data); \
 	else \
-		append_u32(desc, data); \
+		append_u32(desc, lower_32_bits(data)); \
 } while (0)
 
 #define append_math_add_imm_u64(desc, dest, src0, src1, data) \

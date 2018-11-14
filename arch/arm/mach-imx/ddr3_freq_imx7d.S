@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Freescale Semiconductor, Inc. All Rights Reserved.
+ * Copyright (C) 2015-2016 Freescale Semiconductor, Inc. All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #define DDRC_MRSTAT		0x18
 #define DDRC_PWRCTL		0x30
 #define DDRC_RFSHCTL3		0x60
+#define DDRC_RFSHTMG		0x64
 #define DDRC_DBG1		0x304
 #define DDRC_SWCTL		0x320
 #define DDRC_SWSTAT		0x324
@@ -135,7 +136,15 @@
 
 	ldr	r6, =24000000
 	cmp	r0, r6
-	bne	7f
+	beq	25f
+
+	ldr	r7, =0x000B000D
+	str	r7,[r4, #DDRC_RFSHTMG]
+	b	7f
+
+25:
+	ldr	r7, =0x00030004
+	str	r7,[r4, #DDRC_RFSHTMG]
 
 	/* dram alt sel set to OSC */
 	ldr	r7, =0x10000000
@@ -176,8 +185,8 @@
 
 	ldr	r7, [r9, #ANADIG_DIGPROG]
 	and	r7, r7, #0x11
-	cmp	r7, #0x10
-	beq	20f
+	cmp	r7, #0x11
+	bne	20f
 
 	ldr	r7, =0x0
 	str	r7, [r5, #DDRPHY_CA_WLDSKEW_CON0]
@@ -286,12 +295,15 @@
 	ldr	r7, =0x10210100
 	str	r7, [r5, #0x4]
 
+	ldr	r7, =0x00040046
+	str	r7, [r4, #DDRC_RFSHTMG]
+
 	/* dram root set to from dram main, div by 2 */
 	ldr	r7, =0x10000001
 	ldr	r8, =0x9880
 	str	r7, [r2, r8]
 
-	ldr	r7, =0x02020070
+	ldr	r7, =0x1010007e
 	str	r7, [r5, #DDRPHY_MDLL_CON0]
 
 	ldr	r7, =0x10000008
@@ -311,8 +323,8 @@
 
 	ldr	r7, [r9, #ANADIG_DIGPROG]
 	and	r7, r7, #0x11
-	cmp	r7, #0x10
-	beq	22f
+	cmp	r7, #0x11
+	bne	22f
 
 	ldr	r7, =0x40404040
 	str	r7, [r5, #DDRPHY_CA_WLDSKEW_CON0]

@@ -27,7 +27,7 @@ static void ab8500_power_off(void)
 {
 	sigset_t old;
 	sigset_t all;
-	static char *pss[] = {"ab8500_ac", "pm2301", "ab8500_usb"};
+	static const char * const pss[] = {"ab8500_ac", "pm2301", "ab8500_usb"};
 	int i;
 	bool charger_present = false;
 	union power_supply_propval val;
@@ -68,10 +68,9 @@ static void ab8500_power_off(void)
 		ret = power_supply_get_property(psy,
 				POWER_SUPPLY_PROP_TECHNOLOGY, &val);
 		if (!ret && val.intval != POWER_SUPPLY_TECHNOLOGY_UNKNOWN) {
-			printk(KERN_INFO
-			       "Charger \"%s\" is connected with known battery."
-			       " Rebooting.\n",
-			       pss[i]);
+			pr_info("Charger '%s' is connected with known battery",
+				pss[i]);
+			pr_info(" - Rebooting.\n");
 			machine_restart("charging");
 		}
 		power_supply_put(psy);
@@ -99,7 +98,7 @@ int ab8500_sysctrl_read(u16 reg, u8 *value)
 	u8 bank;
 
 	if (sysctrl_dev == NULL)
-		return -EINVAL;
+		return -EPROBE_DEFER;
 
 	bank = (reg >> 8);
 	if (!valid_bank(bank))
@@ -115,11 +114,13 @@ int ab8500_sysctrl_write(u16 reg, u8 mask, u8 value)
 	u8 bank;
 
 	if (sysctrl_dev == NULL)
-		return -EINVAL;
+		return -EPROBE_DEFER;
 
 	bank = (reg >> 8);
-	if (!valid_bank(bank))
+	if (!valid_bank(bank)) {
+		pr_err("invalid bank\n");
 		return -EINVAL;
+	}
 
 	return abx500_mask_and_set_register_interruptible(sysctrl_dev, bank,
 		(u8)(reg & 0xFF), mask, value);
@@ -128,44 +129,10 @@ EXPORT_SYMBOL(ab8500_sysctrl_write);
 
 static int ab8500_sysctrl_probe(struct platform_device *pdev)
 {
-	struct ab8500 *ab8500 = dev_get_drvdata(pdev->dev.parent);
-	struct ab8500_platform_data *plat;
-	struct ab8500_sysctrl_platform_data *pdata;
-
-	plat = dev_get_platdata(pdev->dev.parent);
-
-	if (!plat)
-		return -EINVAL;
-
 	sysctrl_dev = &pdev->dev;
 
 	if (!pm_power_off)
 		pm_power_off = ab8500_power_off;
-
-	pdata = plat->sysctrl;
-	if (pdata) {
-		int last, ret, i, j;
-
-		if (is_ab8505(ab8500))
-			last = AB8500_SYSCLKREQ4RFCLKBUF;
-		else
-			last = AB8500_SYSCLKREQ8RFCLKBUF;
-
-		for (i = AB8500_SYSCLKREQ1RFCLKBUF; i <= last; i++) {
-			j = i - AB8500_SYSCLKREQ1RFCLKBUF;
-			ret = ab8500_sysctrl_write(i, 0xff,
-					pdata->initial_req_buf_config[j]);
-			dev_dbg(&pdev->dev,
-					"Setting SysClkReq%dRfClkBuf 0x%X\n",
-					j + 1,
-					pdata->initial_req_buf_config[j]);
-			if (ret < 0) {
-				dev_err(&pdev->dev,
-					"unable to set sysClkReq%dRfClkBuf: "
-					"%d\n", j + 1, ret);
-			}
-		}
-	}
 
 	return 0;
 }
@@ -180,9 +147,15 @@ static int ab8500_sysctrl_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id ab8500_sysctrl_match[] = {
+	{ .compatible = "stericsson,ab8500-sysctrl", },
+	{}
+};
+
 static struct platform_driver ab8500_sysctrl_driver = {
 	.driver = {
 		.name = "ab8500-sysctrl",
+		.of_match_table = ab8500_sysctrl_match,
 	},
 	.probe = ab8500_sysctrl_probe,
 	.remove = ab8500_sysctrl_remove,

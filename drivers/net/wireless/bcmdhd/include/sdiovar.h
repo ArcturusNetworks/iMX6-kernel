@@ -22,7 +22,10 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: sdiovar.h 241182 2011-02-17 21:50:03Z $
+ *
+ * <<Broadcom-WL-IPTag/Open:>>
+ *
+ * $Id: sdiovar.h 514727 2014-11-12 03:02:48Z $
  */
 
 #ifndef _sdiovar_h_
@@ -49,6 +52,7 @@ typedef struct sdreg {
 #define SDH_CTRL_VAL		0x0020	/* Control Regs */
 #define SDH_LOG_VAL		0x0040	/* Enable bcmlog */
 #define SDH_DMA_VAL		0x0080	/* DMA */
+#define SDH_COST_VAL		0x8000	/* Control Regs */
 
 #define NUM_PREV_TRANSACTIONS	16
 

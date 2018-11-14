@@ -16,6 +16,13 @@
 #include "imx6sl-evk.dts"
 
 / {
+	modem_reset: modem-reset {
+		compatible = "gpio-reset";
+		reset-gpios = <&gpio5 17 GPIO_ACTIVE_LOW>;
+		reset-delay-us = <1000>;
+		#reset-cells = <0>;
+	};
+
 	regulators {
 		wlreg_on: fixedregulator@100 {
 			compatible = "regulator-fixed";
@@ -30,6 +37,7 @@
 
 	bcmdhd_wlan_0: bcmdhd_wlan@0 {
 		compatible = "android,bcmdhd_wlan";
+		gpios = <&gpio5 20 0>; /* WL_HOST_WAKE */
 		wlreg_on-supply = <&wlreg_on>;
 	};
 };
@@ -37,6 +45,12 @@
 &iomuxc {
 	imx6sl-evk-murata-v1_sdext {
 		/* Only MUX SD1_DAT0..3 lines so UART4 can be MUXed on higher data lines. */
+		pinctrl_btreg: btreggrp {
+			fsl,pins = <
+				MX6SL_PAD_SD3_DAT3__GPIO5_IO17          0x13069 /* BT_REG_ON */
+			>;
+		};
+
 		pinctrl_wifi: wifigrp {
 			fsl,pins = <
 				MX6SL_PAD_SD1_CMD__SD1_CMD		0x17059
@@ -45,6 +59,7 @@
 				MX6SL_PAD_SD1_DAT1__SD1_DATA1		0x17059
 				MX6SL_PAD_SD1_DAT2__SD1_DATA2		0x17059
 				MX6SL_PAD_SD1_DAT3__SD1_DATA3		0x17059
+				MX6SL_PAD_SD3_DAT1__GPIO5_IO20		0x13069 /* WL_HOST_WAKE */
 				MX6SL_PAD_SD3_DAT2__GPIO5_IO16		0x13069 /* WL_REG_ON */
 			>;
 		};
@@ -57,6 +72,18 @@
 			>;
 		};
 	};
+};
+/* Murata: declare UART4 interface for Bluetooth. */
+&uart4 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart4_1
+		     &pinctrl_btreg>;
+	fsl,uart-has-rtscts;
+	resets = <&modem_reset>;
+	status = "okay";
+	/* for DTE mode, add below change */
+	/* fsl,dte-mode; */
+	/* pinctrl-0 = <&pinctrl_uart4dte_1>; */
 };
 
 &usdhc1 {

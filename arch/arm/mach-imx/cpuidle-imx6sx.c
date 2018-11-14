@@ -13,15 +13,16 @@
 #include <linux/genalloc.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
-#include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/of_device.h>
+#include <linux/psci.h>
+#include <asm/cacheflush.h>
 #include <asm/cpuidle.h>
 #include <asm/fncpy.h>
 #include <asm/mach/map.h>
 #include <asm/proc-fns.h>
 #include <asm/suspend.h>
 #include <asm/tlb.h>
+
+#include <uapi/linux/psci.h>
 
 #include "common.h"
 #include "cpuidle.h"
@@ -88,9 +89,27 @@ struct imx6_cpuidle_pm_info {
 
 static void (*imx6sx_wfi_in_iram_fn)(void __iomem *iram_vbase);
 
+#define MX6SX_POWERDWN_IDLE_PARAM	\
+	((1 << PSCI_0_2_POWER_STATE_ID_SHIFT) | \
+	 (1 << PSCI_0_2_POWER_STATE_AFFL_SHIFT) | \
+	 (PSCI_POWER_STATE_TYPE_POWER_DOWN << PSCI_0_2_POWER_STATE_TYPE_SHIFT))
+
 static int imx6_idle_finish(unsigned long val)
 {
-	imx6sx_wfi_in_iram_fn(wfi_iram_base);
+	/*
+	 * for Cortex-A7 which has an internal L2
+	 * cache, need to flush it before powering
+	 * down ARM platform, since flushing L1 cache
+	 * here again has very small overhead, compared
+	 * to adding conditional code for L2 cache type,
+	 * just call flush_cache_all() is fine.
+	 */
+	flush_cache_all();
+	if (psci_ops.cpu_suspend)
+		psci_ops.cpu_suspend(MX6SX_POWERDWN_IDLE_PARAM,
+				     __pa(cpu_resume));
+	else
+		imx6sx_wfi_in_iram_fn(wfi_iram_base);
 
 	return 0;
 }
@@ -100,8 +119,9 @@ static int imx6sx_enter_wait(struct cpuidle_device *dev,
 {
 	int mode = get_bus_freq_mode();
 
-	imx6q_set_lpm(WAIT_UNCLOCKED);
+	imx6_set_lpm(WAIT_UNCLOCKED);
 	if ((index == 1) || ((mode != BUS_FREQ_LOW) && index == 2)) {
+		index = 1;
 		cpu_do_idle();
 	} else {
 			/* Need to notify there is a cpu pm operation. */
@@ -115,7 +135,7 @@ static int imx6sx_enter_wait(struct cpuidle_device *dev,
 			imx6_enable_rbc(false);
 	}
 
-	imx6q_set_lpm(WAIT_CLOCKED);
+	imx6_set_lpm(WAIT_CLOCKED);
 
 	return index;
 }
@@ -212,7 +232,7 @@ int __init imx6sx_cpuidle_init(void)
 		&imx6sx_low_power_idle, wfi_code_size);
 #endif
 
-	imx6q_set_int_mem_clk_lpm(true);
+	imx6_set_int_mem_clk_lpm(true);
 
 	if (imx_get_soc_revision() >= IMX_CHIP_REVISION_1_2) {
 		/*
