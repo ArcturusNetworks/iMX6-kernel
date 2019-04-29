@@ -100,6 +100,11 @@ config SND_SOC_IMX_PCM_DMA
 	tristate
 	select SND_SOC_GENERIC_DMAENGINE_PCM
 
+config SND_SOC_IMX_PCM_DMA_OCL
+	hex "iMX pcm DMA socket One Channel Loopback mode"
+	depends on SND_SOC_IMX_PCM_DMA
+	default 1
+
 config SND_SOC_IMX_PCM_RPMSG
 	tristate
 	depends on RPMSG

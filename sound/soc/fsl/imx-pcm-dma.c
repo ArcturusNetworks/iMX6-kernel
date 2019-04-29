@@ -48,6 +48,12 @@ static const struct snd_pcm_hardware imx_pcm_hardware = {
 	.fifo_size = 0,
 };
 
+#ifdef CONFIG_SND_SOC_IMX_PCM_DMA_OCL
+/* 16KHz-freq, 20ms-ptime, 2 channels */
+#define ALSA_OCL_FRAMES			320
+#define ALSA_OCL_SAMPLE_SIZE		1280
+#endif
+
 static void imx_pcm_dma_complete(void *arg)
 {
 	struct snd_pcm_substream *substream = arg;
@@ -55,6 +61,30 @@ static void imx_pcm_dma_complete(void *arg)
 	struct dmaengine_pcm_runtime_data *prtd = substream->runtime->private_data;
 	struct snd_dmaengine_dai_dma_data *dma_data;
 
+#ifdef CONFIG_SND_SOC_IMX_PCM_DMA_OCL
+	static char alsa_ocl_loopbuf[ALSA_OCL_SAMPLE_SIZE];
+	char *hwbuf = (char *) ((unsigned int)substream->runtime->dma_area + (unsigned int)prtd->pos);
+	int i;
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		for (i = 0; i < ALSA_OCL_SAMPLE_SIZE; i++)
+			alsa_ocl_loopbuf[i] = hwbuf[i]; 
+		pr_debug("w:%2x %2x %2x %2x\n", alsa_ocl_loopbuf[0], alsa_ocl_loopbuf[1], alsa_ocl_loopbuf[2], alsa_ocl_loopbuf[3]);
+	} else {
+#if (CONFIG_SND_SOC_IMX_PCM_DMA_OCL == 1)
+		for (i = 0; i < ALSA_OCL_FRAMES; i++) {
+			hwbuf[4*i + 2] = alsa_ocl_loopbuf[4*i + 2]; 
+			hwbuf[4*i + 3] = alsa_ocl_loopbuf[4*i + 3];
+		}
+#else
+		for (i = 0; i < ALSA_OCL_FRAMES; i++) {
+			hwbuf[4*i + 0] = alsa_ocl_loopbuf[4*i + 0]; 
+			hwbuf[4*i + 1] = alsa_ocl_loopbuf[4*i + 1];
+		}
+#endif
+		pr_debug("r:%2x %2x %2x %2x\n", hwbuf[0], hwbuf[1], hwbuf[2], hwbuf[3]);
+	}
+#endif
 	prtd->pos += snd_pcm_lib_period_bytes(substream);
 	if (prtd->pos >= snd_pcm_lib_buffer_bytes(substream))
 		prtd->pos = 0;
