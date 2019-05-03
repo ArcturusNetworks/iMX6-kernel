@@ -48,10 +48,14 @@ static const struct snd_pcm_hardware imx_pcm_hardware = {
 	.fifo_size = 0,
 };
 
-#ifdef CONFIG_SND_SOC_IMX_PCM_DMA_OCL
+#if (CONFIG_SND_SOC_IMX_PCM_DMA_OCL == 1) || (CONFIG_SND_SOC_IMX_PCM_DMA_OCL == 2)
 /* 16KHz-freq, 20ms-ptime, 2 channels */
 #define ALSA_OCL_FRAMES			320
 #define ALSA_OCL_SAMPLE_SIZE		1280
+
+int imx_pcm_dma_ocl = CONFIG_SND_SOC_IMX_PCM_DMA_OCL;
+
+EXPORT_SYMBOL_GPL(imx_pcm_dma_ocl);
 #endif
 
 static void imx_pcm_dma_complete(void *arg)
@@ -61,7 +65,7 @@ static void imx_pcm_dma_complete(void *arg)
 	struct dmaengine_pcm_runtime_data *prtd = substream->runtime->private_data;
 	struct snd_dmaengine_dai_dma_data *dma_data;
 
-#ifdef CONFIG_SND_SOC_IMX_PCM_DMA_OCL
+#if (CONFIG_SND_SOC_IMX_PCM_DMA_OCL == 1) || (CONFIG_SND_SOC_IMX_PCM_DMA_OCL == 2)
 	static char alsa_ocl_loopbuf[ALSA_OCL_SAMPLE_SIZE];
 	char *hwbuf = (char *) ((unsigned int)substream->runtime->dma_area + (unsigned int)prtd->pos);
 	int i;

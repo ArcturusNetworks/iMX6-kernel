@@ -103,7 +103,7 @@ config SND_SOC_IMX_PCM_DMA
 config SND_SOC_IMX_PCM_DMA_OCL
 	hex "iMX pcm DMA socket One Channel Loopback mode"
 	depends on SND_SOC_IMX_PCM_DMA
-	default 1
+	default 0
 
 config SND_SOC_IMX_PCM_RPMSG
 	tristate
