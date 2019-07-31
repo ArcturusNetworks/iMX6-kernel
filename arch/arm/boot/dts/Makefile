@@ -326,6 +326,7 @@ dtb-$(CONFIG_SOC_IMX53) += \
 	imx53-voipac-bsb.dtb
 dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6dl-apf6dev.dtb \
+	imx6dl-arcturus-ps.dtb \
 	imx6dl-aristainetos_4.dtb \
 	imx6dl-aristainetos_7.dtb \
 	imx6dl-aristainetos2_4.dtb \
@@ -350,8 +351,6 @@ dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6dl-pico_hobbit.dtb \
 	imx6dl-pico_nymph.dtb \
 	imx6dl-pico_pi.dtb \
-	imx6dl-viking-x-35.dtb \
-	imx6dl-viking-x-35-nosd.dtb \
 	imx6dl-rex-basic.dtb \
 	imx6dl-riotboard.dtb \
 	imx6dl-sabreauto.dtb \
